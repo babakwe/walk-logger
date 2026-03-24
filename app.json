@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "towntrip-trail-logger",
+    "name": "TownTrip Trail Logger",
     "slug": "towntrip-trail-logger",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,17 +9,31 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.babakwe.towntrip.traillogger",
+      "infoPlist": {
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "TownTrip needs location access to record your trail walks, including when the app is in the background.",
+        "NSLocationWhenInUseUsageDescription": "TownTrip needs location access to record your trail walks.",
+        "NSLocationAlwaysUsageDescription": "TownTrip needs background location access to record your trail walks.",
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "location",
+          "fetch"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/adaptive-icon.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.babakwe.towntrip.traillogger",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -28,21 +42,30 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "TownTrip needs location to record your trail walks in the background.",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#ffffff"
         }
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d53615e1-712e-4039-9c62-aab4baa5b1e3"
+      }
     }
   }
 }
