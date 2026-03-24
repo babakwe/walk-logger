@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import * as Location from "expo-location";
@@ -15,8 +16,13 @@ import { useKeepAwake } from "expo-keep-awake";
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from "react-native-maps";
 
 const LOCATION_TASK = "towntrip-background-location";
-const ALCOTT_TRAIL = { latitude: 40.8699, longitude: -73.8318 };
-const LOG_FILE = FileSystem.documentDirectory + "towntrip_trail_points.jsonl";
+const ALCOTT_TRAIL  = { latitude: 40.8699, longitude: -73.8318 };
+const LOG_FILE      = FileSystem.documentDirectory + "towntrip_trail_points.jsonl";
+const AUTOSAVE_FILE = FileSystem.documentDirectory + "towntrip_session_autosave.json";
+const AUTOSAVE_MS   = 60_000;
+
+const TRIP_TYPES = ["walk", "transit", "run"] as const;
+type TripType = typeof TRIP_TYPES[number];
 
 type GpsPoint = {
   timestamp_ms: number;
@@ -37,12 +43,12 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: any) => {
     const p: GpsPoint = {
       timestamp_ms: loc.timestamp ?? Date.now(),
       iso_time: new Date(loc.timestamp ?? Date.now()).toISOString(),
-      latitude: loc.coords?.latitude,
+      latitude:  loc.coords?.latitude,
       longitude: loc.coords?.longitude,
-      altitude: loc.coords?.altitude ?? null,
-      accuracy: loc.coords?.accuracy ?? null,
-      speed_mps: loc.coords?.speed ?? null,
-      heading: loc.coords?.heading ?? null,
+      altitude:  loc.coords?.altitude   ?? null,
+      accuracy:  loc.coords?.accuracy   ?? null,
+      speed_mps: loc.coords?.speed      ?? null,
+      heading:   loc.coords?.heading    ?? null,
     };
     return JSON.stringify(p);
   }).join("\n") + "\n";
@@ -57,19 +63,23 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: any) => {
   } catch (e) { console.log("Write failed:", e); }
 });
 
-export default function TrailLoggerScreen() {
+export default function WalkLoggerScreen() {
   useKeepAwake();
   const mapRef = useRef<MapView>(null);
-  const [running, setRunning] = useState(false);
-  const [trail, setTrail] = useState<GpsPoint[]>([]);
+  const [running, setRunning]       = useState(false);
+  const [trail, setTrail]           = useState<GpsPoint[]>([]);
   const [currentPos, setCurrentPos] = useState<GpsPoint | null>(null);
-  const [sessionName] = useState(
-    "trail_" + new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "h")
-  );
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed]       = useState(0);
   const [pointCount, setPointCount] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fgWatchRef = useRef<Location.LocationSubscription | null>(null);
+  const [note, setNote]             = useState("");
+  const [tripType, setTripType]     = useState<TripType>("walk");
+  const [sessionName]               = useState(
+    "walk_" + new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "h")
+  );
+  const fgWatchRef  = useRef<Location.LocationSubscription | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autosaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const trailRef    = useRef<GpsPoint[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -77,6 +87,32 @@ export default function TrailLoggerScreen() {
       setRunning(started);
       if (started) startForegroundWatch();
       await syncTrailFromFile();
+      try {
+        const info = await FileSystem.getInfoAsync(AUTOSAVE_FILE);
+        if (info.exists) {
+          const raw   = await FileSystem.readAsStringAsync(AUTOSAVE_FILE);
+          const saved = JSON.parse(raw);
+          if (saved?.points?.length > 0) {
+            Alert.alert(
+              "Unsaved walk found",
+              saved.points.length + " points from " + saved.autosaved_at + ". Recover it?",
+              [
+                { text: "Recover & Export", onPress: async () => {
+                    trailRef.current = saved.points;
+                    setTrail(saved.points);
+                    setPointCount(saved.points.length);
+                    setNote(saved.note ?? "");
+                    setTripType(saved.trip_type ?? "walk");
+                    await exportGeoJSON(saved.points, saved.note ?? "", saved.trip_type ?? "walk", saved.elapsed ?? 0);
+                    await FileSystem.deleteAsync(AUTOSAVE_FILE, { idempotent: true });
+                }},
+                { text: "Discard", style: "destructive",
+                  onPress: () => FileSystem.deleteAsync(AUTOSAVE_FILE, { idempotent: true }) },
+              ]
+            );
+          }
+        }
+      } catch (_) {}
     })();
     return () => cleanup();
   }, []);
@@ -92,7 +128,8 @@ export default function TrailLoggerScreen() {
 
   const cleanup = () => {
     fgWatchRef.current?.remove();
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current)    clearInterval(timerRef.current);
+    if (autosaveRef.current) clearInterval(autosaveRef.current);
   };
 
   const syncTrailFromFile = async () => {
@@ -102,12 +139,26 @@ export default function TrailLoggerScreen() {
       const raw = await FileSystem.readAsStringAsync(LOG_FILE);
       const points = raw.trim().split("\n")
         .filter(Boolean)
-        .map((l) => { try { return JSON.parse(l) as GpsPoint; } catch { return null; } })
+        .map(l => { try { return JSON.parse(l) as GpsPoint; } catch { return null; } })
         .filter(Boolean) as GpsPoint[];
+      trailRef.current = points;
       setTrail(points);
       setPointCount(points.length);
       if (points.length) setCurrentPos(points[points.length - 1]);
-    } catch (e) { console.log("Sync trail error:", e); }
+    } catch (e) { console.log("Sync error:", e); }
+  };
+
+  const startAutosave = (n: string, tt: TripType, el: number) => {
+    if (autosaveRef.current) clearInterval(autosaveRef.current);
+    autosaveRef.current = setInterval(async () => {
+      try {
+        await FileSystem.writeAsStringAsync(AUTOSAVE_FILE, JSON.stringify({
+          session: sessionName, points: trailRef.current,
+          note: n, trip_type: tt, elapsed: el,
+          autosaved_at: new Date().toLocaleTimeString(),
+        }));
+      } catch (_) {}
+    }, AUTOSAVE_MS);
   };
 
   const startForegroundWatch = async () => {
@@ -117,17 +168,18 @@ export default function TrailLoggerScreen() {
       (loc) => {
         const p: GpsPoint = {
           timestamp_ms: loc.timestamp,
-          iso_time: new Date(loc.timestamp).toISOString(),
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-          altitude: loc.coords.altitude ?? null,
-          accuracy: loc.coords.accuracy ?? null,
-          speed_mps: loc.coords.speed ?? null,
-          heading: loc.coords.heading ?? null,
+          iso_time:     new Date(loc.timestamp).toISOString(),
+          latitude:     loc.coords.latitude,
+          longitude:    loc.coords.longitude,
+          altitude:     loc.coords.altitude  ?? null,
+          accuracy:     loc.coords.accuracy  ?? null,
+          speed_mps:    loc.coords.speed     ?? null,
+          heading:      loc.coords.heading   ?? null,
         };
         setCurrentPos(p);
         setTrail(prev => {
           const next = [...prev, p];
+          trailRef.current = next;
           setPointCount(next.length);
           return next;
         });
@@ -142,87 +194,75 @@ export default function TrailLoggerScreen() {
   const handleStart = async () => {
     try {
       const fg = await Location.requestForegroundPermissionsAsync();
-      if (fg.status !== "granted") {
-        Alert.alert("Permission needed", "Foreground location permission is required.");
-        return;
-      }
+      if (fg.status !== "granted") { Alert.alert("Permission needed", "Foreground location required."); return; }
       const bg = await Location.requestBackgroundPermissionsAsync();
-      if (bg.status !== "granted") {
-        Alert.alert("Permission needed", "Background location required.\n\nSettings → Privacy → Location Services → towntrip-trail-logger → Always.");
-        return;
-      }
+      if (bg.status !== "granted") { Alert.alert("Permission needed", "Settings → Privacy → Location Services → Walk Logger → Always."); return; }
       await FileSystem.deleteAsync(LOG_FILE, { idempotent: true });
-      setTrail([]);
-      setPointCount(0);
-      setElapsed(0);
+      trailRef.current = [];
+      setTrail([]); setPointCount(0); setElapsed(0);
       await Location.startLocationUpdatesAsync(LOCATION_TASK, {
         accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 1000,
-        distanceInterval: 0,
+        timeInterval: 1000, distanceInterval: 0,
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
       });
       await startForegroundWatch();
+      startAutosave(note, tripType, 0);
       setRunning(true);
-    } catch (e: any) {
-      Alert.alert("Start failed", String(e));
-    }
+    } catch (e: any) { Alert.alert("Start failed", String(e)); }
   };
 
   const handleStop = async () => {
     try {
       await Location.stopLocationUpdatesAsync(LOCATION_TASK);
       fgWatchRef.current?.remove();
+      if (autosaveRef.current) clearInterval(autosaveRef.current);
       setRunning(false);
       await syncTrailFromFile();
-    } catch (e: any) {
-      Alert.alert("Stop failed", String(e));
-    }
+    } catch (e: any) { Alert.alert("Stop failed", String(e)); }
+  };
+
+  const exportGeoJSON = async (points: GpsPoint[], expNote: string, expType: string, expElapsed: number) => {
+    if (!points.length) { Alert.alert("No data", "Record a walk first."); return; }
+    const geojson = {
+      type: "FeatureCollection",
+      properties: {
+        session: sessionName, points: points.length,
+        duration_sec: expElapsed, exported_at: new Date().toISOString(),
+        source: "towntrip-walk-logger",
+        note: expNote.trim(), trip_type: expType,
+      },
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: points.map(p => [p.longitude, p.latitude, p.altitude ?? 0]) },
+          properties: { session: sessionName, start: points[0]?.iso_time, end: points[points.length-1]?.iso_time, points: points.length },
+        },
+        ...points.map((p, i) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [p.longitude, p.latitude, p.altitude ?? 0] },
+          properties: {
+            i, timestamp_ms: p.timestamp_ms, iso_time: p.iso_time,
+            accuracy: p.accuracy, speed_mps: p.speed_mps, heading: p.heading,
+            is_stopped: p.speed_mps !== null && p.speed_mps >= 0 && p.speed_mps < 0.3,
+          },
+        })),
+      ],
+    };
+    const outPath = FileSystem.documentDirectory + sessionName + ".geojson";
+    await FileSystem.writeAsStringAsync(outPath, JSON.stringify(geojson, null, 2));
+    await Sharing.shareAsync(outPath);
+    await FileSystem.deleteAsync(AUTOSAVE_FILE, { idempotent: true });
   };
 
   const handleExport = async () => {
-    try {
-      if (trail.length === 0) {
-        Alert.alert("No data", "Walk the trail first to collect points.");
-        return;
-      }
-      const geojson = {
-        type: "FeatureCollection",
-        properties: {
-          session: sessionName,
-          points: trail.length,
-          duration_sec: elapsed,
-          exported_at: new Date().toISOString(),
-          source: "towntrip-trail-logger",
-        },
-        features: [
-          {
-            type: "Feature",
-            geometry: {
-              type: "LineString",
-              coordinates: trail.map(p => [p.longitude, p.latitude, p.altitude ?? 0]),
-            },
-            properties: { session: sessionName, start: trail[0]?.iso_time, end: trail[trail.length - 1]?.iso_time, points: trail.length },
-          },
-          ...trail.map((p, i) => ({
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [p.longitude, p.latitude, p.altitude ?? 0] },
-            properties: { i, timestamp_ms: p.timestamp_ms, iso_time: p.iso_time, accuracy: p.accuracy, speed_mps: p.speed_mps, heading: p.heading },
-          })),
-        ],
-      };
-      const outPath = FileSystem.documentDirectory + sessionName + ".geojson";
-      await FileSystem.writeAsStringAsync(outPath, JSON.stringify(geojson, null, 2));
-      await Sharing.shareAsync(outPath);
-    } catch (e: any) {
-      Alert.alert("Export failed", String(e));
-    }
+    try { await exportGeoJSON(trail, note, tripType, elapsed); }
+    catch (e: any) { Alert.alert("Export failed", String(e)); }
   };
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60).toString().padStart(2, "0");
-    const sec = (s % 60).toString().padStart(2, "0");
-    return `${m}:${sec}`;
+    return m + ":" + (s % 60).toString().padStart(2, "0");
   };
 
   const speedKmh = currentPos?.speed_mps != null ? (currentPos.speed_mps * 3.6).toFixed(1) : "--";
@@ -230,65 +270,38 @@ export default function TrailLoggerScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_DEFAULT}
-        initialRegion={{
-          latitude: ALCOTT_TRAIL.latitude,
-          longitude: ALCOTT_TRAIL.longitude,
-          latitudeDelta: 0.004,
-          longitudeDelta: 0.004,
-        }}
-        showsUserLocation
-        showsTraffic
-        showsCompass
-        mapType="hybrid"
-      >
-        {trailCoords.length > 1 && (
-          <Polyline coordinates={trailCoords} strokeColor="#00E5FF" strokeWidth={4} />
-        )}
-        {currentPos && (
-          <Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}>
-            <View style={styles.dot} />
-          </Marker>
-        )}
+      <MapView ref={mapRef} style={styles.map} provider={PROVIDER_DEFAULT}
+        initialRegion={{ latitude: ALCOTT_TRAIL.latitude, longitude: ALCOTT_TRAIL.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }}
+        showsUserLocation showsTraffic showsCompass mapType="hybrid">
+        {trailCoords.length > 1 && <Polyline coordinates={trailCoords} strokeColor="#00E5FF" strokeWidth={4} />}
+        {currentPos && <Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}><View style={styles.dot} /></Marker>}
       </MapView>
-
       <View style={styles.statsBar}>
-        <View style={styles.stat}>
-          <Text style={styles.statVal}>{formatTime(elapsed)}</Text>
-          <Text style={styles.statLabel}>TIME</Text>
-        </View>
-        <View style={styles.stat}>
-          <Text style={styles.statVal}>{pointCount}</Text>
-          <Text style={styles.statLabel}>POINTS</Text>
-        </View>
-        <View style={styles.stat}>
-          <Text style={styles.statVal}>{speedKmh}</Text>
-          <Text style={styles.statLabel}>KM/H</Text>
-        </View>
-        <View style={styles.stat}>
-          <Text style={styles.statVal}>{currentPos?.altitude != null ? currentPos.altitude.toFixed(0) + "m" : "--"}</Text>
-          <Text style={styles.statLabel}>ALT</Text>
-        </View>
+        <View style={styles.stat}><Text style={styles.statVal}>{formatTime(elapsed)}</Text><Text style={styles.statLabel}>TIME</Text></View>
+        <View style={styles.stat}><Text style={styles.statVal}>{pointCount}</Text><Text style={styles.statLabel}>POINTS</Text></View>
+        <View style={styles.stat}><Text style={styles.statVal}>{speedKmh}</Text><Text style={styles.statLabel}>KM/H</Text></View>
+        <View style={styles.stat}><Text style={styles.statVal}>{currentPos?.altitude != null ? currentPos.altitude.toFixed(0) + "m" : "--"}</Text><Text style={styles.statLabel}>ALT</Text></View>
       </View>
-
       <View style={styles.sessionBar}>
         <View style={[styles.statusDot, { backgroundColor: running ? "#4CAF50" : "#555" }]} />
         <Text style={styles.sessionText} numberOfLines={1}>{sessionName}</Text>
+        <Text style={styles.tripLabel}>{tripType}</Text>
       </View>
-
+      {!running && (
+        <View style={styles.tripRow}>
+          {TRIP_TYPES.map(t => (
+            <Pressable key={t} style={[styles.tripBtn, tripType === t && styles.tripBtnActive]} onPress={() => setTripType(t)}>
+              <Text style={[styles.tripBtnText, tripType === t && styles.tripBtnTextActive]}>{t}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+      <TextInput style={styles.noteInput} placeholder="Session note" placeholderTextColor="#444" value={note} onChangeText={setNote} multiline />
       <View style={styles.controls}>
-        {!running ? (
-          <Pressable style={[styles.btn, styles.btnStart]} onPress={handleStart}>
-            <Text style={styles.btnText}>▶  START</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={[styles.btn, styles.btnStop]} onPress={handleStop}>
-            <Text style={styles.btnText}>■  STOP</Text>
-          </Pressable>
-        )}
+        {!running
+          ? <Pressable style={[styles.btn, styles.btnStart]} onPress={handleStart}><Text style={styles.btnText}>▶  START</Text></Pressable>
+          : <Pressable style={[styles.btn, styles.btnStop]}  onPress={handleStop}><Text style={styles.btnText}>■  STOP</Text></Pressable>
+        }
         <Pressable style={[styles.btn, styles.btnExport, trail.length === 0 && styles.btnDisabled]} onPress={handleExport} disabled={trail.length === 0}>
           <Text style={styles.btnText}>↑  EXPORT</Text>
         </Pressable>
@@ -298,21 +311,28 @@ export default function TrailLoggerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0A0A0A" },
-  map: { flex: 1 },
-  dot: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#00E5FF", borderWidth: 3, borderColor: "#fff" },
-  statsBar: { flexDirection: "row", backgroundColor: "#0A0A0A", paddingVertical: 12, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: "#1E1E1E" },
-  stat: { flex: 1, alignItems: "center" },
-  statVal: { color: "#FFFFFF", fontSize: 22, fontWeight: "700" },
-  statLabel: { color: "#666", fontSize: 10, marginTop: 2, letterSpacing: 1 },
-  sessionBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#111", paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  sessionText: { color: "#888", fontSize: 12, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
-  controls: { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingBottom: 36, paddingTop: 12, backgroundColor: "#0A0A0A" },
-  btn: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  btnStart: { backgroundColor: "#00C853" },
-  btnStop: { backgroundColor: "#D50000" },
-  btnExport: { backgroundColor: "#0288D1" },
-  btnDisabled: { opacity: 0.4 },
-  btnText: { color: "#fff", fontSize: 15, fontWeight: "700", letterSpacing: 0.5 },
+  container:         { flex: 1, backgroundColor: "#0A0A0A" },
+  map:               { flex: 1 },
+  dot:               { width: 16, height: 16, borderRadius: 8, backgroundColor: "#00E5FF", borderWidth: 3, borderColor: "#fff" },
+  statsBar:          { flexDirection: "row", backgroundColor: "#0A0A0A", paddingVertical: 12, paddingHorizontal: 8, borderTopWidth: 1, borderTopColor: "#1E1E1E" },
+  stat:              { flex: 1, alignItems: "center" },
+  statVal:           { color: "#FFFFFF", fontSize: 22, fontWeight: "700" },
+  statLabel:         { color: "#666", fontSize: 10, marginTop: 2, letterSpacing: 1 },
+  sessionBar:        { flexDirection: "row", alignItems: "center", backgroundColor: "#111", paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+  statusDot:         { width: 8, height: 8, borderRadius: 4 },
+  sessionText:       { color: "#888", fontSize: 12, flex: 1, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  tripLabel:         { color: "#00E5FF", fontSize: 11, fontWeight: "600", letterSpacing: 1 },
+  tripRow:           { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#0A0A0A" },
+  tripBtn:           { flex: 1, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: "#2a2a2a", alignItems: "center" },
+  tripBtnActive:     { borderColor: "#00E5FF", backgroundColor: "#00E5FF18" },
+  tripBtnText:       { color: "#555", fontSize: 12, fontWeight: "600", letterSpacing: 0.5 },
+  tripBtnTextActive: { color: "#00E5FF" },
+  noteInput:         { backgroundColor: "#111", color: "#ccc", fontSize: 12, paddingHorizontal: 16, paddingVertical: 10, minHeight: 40, borderTopWidth: 1, borderTopColor: "#1E1E1E" },
+  controls:          { flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingBottom: 36, paddingTop: 12, backgroundColor: "#0A0A0A" },
+  btn:               { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  btnStart:          { backgroundColor: "#00C853" },
+  btnStop:           { backgroundColor: "#D50000" },
+  btnExport:         { backgroundColor: "#0288D1" },
+  btnDisabled:       { opacity: 0.4 },
+  btnText:           { color: "#fff", fontSize: 15, fontWeight: "700", letterSpacing: 0.5 },
 });
