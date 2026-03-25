@@ -7,6 +7,7 @@ import * as TaskManager from "expo-task-manager";
 import { useKeepAwake } from "expo-keep-awake";
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import { useMotionSensors } from "../../hooks/useMotionSensors";
+import { useHealthKit } from "../../hooks/useHealthKit";
 
 const LOCATION_TASK = "towntrip-background-location";
 const ALCOTT_TRAIL  = { latitude: 40.8699, longitude: -73.8318 };
@@ -28,6 +29,7 @@ type GpsPoint = {
   pitch:number|null; roll:number|null; yaw:number|null;
   user_accel_x:number|null; user_accel_y:number|null; user_accel_z:number|null;
   pressure_hpa:number|null; pressure_alt_m:number|null; cadence_spm:number|null;
+  hk_hr:number|null; hk_hrv:number|null; hk_temp_c:number|null; hk_spo2:number|null; hk_cal:number|null;
 };
 type Weather = { temp_c:number; wind_kph:number; wind_dir_deg:number; gust_kph:number; fetched_at:number; };
 
@@ -64,6 +66,7 @@ export default function WalkLoggerScreen() {
   const [sessionName] = useState("walk_"+new Date().toISOString().slice(0,16).replace("T","_").replace(":","h"));
 
   const { snapshot:motionSnapshot, available:sensorAvail } = useMotionSensors(running);
+  const { getSnapshot:healthSnap, snapshot:hkData } = useHealthKit(running);
 
   const fgWatchRef  = useRef<Location.LocationSubscription|null>(null);
   const timerRef    = useRef<ReturnType<typeof setInterval>|null>(null);
@@ -137,7 +140,7 @@ export default function WalkLoggerScreen() {
     fgWatchRef.current=await Location.watchPositionAsync(
       {accuracy:Location.Accuracy.BestForNavigation,timeInterval:1000,distanceInterval:0},
       (loc)=>{
-        const w=weatherRef.current; const ms=motionSnapshot();
+        const w=weatherRef.current; const ms=motionSnapshot(); const hs=healthSnap();
         const p:GpsPoint={
           timestamp_ms:loc.timestamp, iso_time:new Date(loc.timestamp).toISOString(),
           latitude:loc.coords.latitude, longitude:loc.coords.longitude,
@@ -150,6 +153,7 @@ export default function WalkLoggerScreen() {
           pitch:ms.pitch, roll:ms.roll, yaw:ms.yaw,
           user_accel_x:ms.user_accel_x, user_accel_y:ms.user_accel_y, user_accel_z:ms.user_accel_z,
           pressure_hpa:ms.pressure_hpa, pressure_alt_m:ms.pressure_alt_m, cadence_spm:ms.cadence_spm,
+          hk_hr:hs.heart_rate, hk_hrv:hs.hrv, hk_temp_c:hs.wrist_temp_c, hk_spo2:hs.spo2, hk_cal:hs.calories_active,
         };
         setCurrentPos(p);
         setTrail(prev=>{const next=[...prev,p];trailRef.current=next;setPointCount(next.length);return next;});
@@ -161,7 +165,7 @@ export default function WalkLoggerScreen() {
   const handleStart=async()=>{
     try{
       const fg=await Location.requestForegroundPermissionsAsync(); if(fg.status!=="granted"){Alert.alert("Permission needed","Foreground location required.");return;}
-      const bg=await Location.requestBackgroundPermissionsAsync(); if(bg.status!=="granted"){Alert.alert("Permission needed","Settings → Privacy → Location Services → Walk Logger → Always.");return;}
+      const bg=await Location.requestBackgroundPermissionsAsync(); if(bg.status!=="granted"){Alert.alert("Permission needed","Settings â Privacy â Location Services â Walk Logger â Always.");return;}
       await FileSystem.deleteAsync(LOG_FILE,{idempotent:true});
       trailRef.current=[];setTrail([]);setPointCount(0);setElapsed(0);elapsedRef.current=0;
       await Location.startLocationUpdatesAsync(LOCATION_TASK,{accuracy:Location.Accuracy.BestForNavigation,timeInterval:1000,distanceInterval:0,pausesUpdatesAutomatically:false,showsBackgroundLocationIndicator:true});
@@ -194,6 +198,7 @@ export default function WalkLoggerScreen() {
           pitch:p.pitch,roll:p.roll,yaw:p.yaw,
           user_accel_x:p.user_accel_x,user_accel_y:p.user_accel_y,user_accel_z:p.user_accel_z,
           pressure_hpa:p.pressure_hpa,pressure_alt_m:p.pressure_alt_m,cadence_spm:p.cadence_spm,
+            hk_hr:p.hk_hr,hk_hrv:p.hk_hrv,hk_temp_c:p.hk_temp_c,hk_spo2:p.hk_spo2,hk_cal:p.hk_cal,
           is_stopped:p.speed_mps!==null&&p.speed_mps>=0&&p.speed_mps<0.3,
         }})),
       ],
@@ -209,7 +214,7 @@ export default function WalkLoggerScreen() {
   const speedKmh=currentPos?.speed_mps!=null?(currentPos.speed_mps*3.6).toFixed(1):"--";
   const trailCoords=trail.map(p=>({latitude:p.latitude,longitude:p.longitude}));
   const windLabel=weather?`${weather.wind_kph} km/h ${degToDir(weather.wind_dir_deg)}`:"--";
-  const gustExtra=weather&&weather.gust_kph>weather.wind_kph+5?` ↑${weather.gust_kph}`:"";
+  const gustExtra=weather&&weather.gust_kph>weather.wind_kph+5?` â${weather.gust_kph}`:"";
   const sensorDots=[{label:"A",key:"accelerometer"},{label:"G",key:"gyroscope"},{label:"M",key:"magnetometer"},{label:"D",key:"deviceMotion"},{label:"B",key:"barometer"}] as const;
 
   return (
@@ -222,10 +227,10 @@ export default function WalkLoggerScreen() {
       </MapView>
 
       <View style={s.weatherBar}>
-        <Text style={s.wi}>🌡 {weather?`${weather.temp_c}°C`:"--"}</Text>
-        <Text style={s.wi}>💨 {windLabel}{gustExtra}</Text>
-        {currentPos?.pressure_hpa&&<Text style={s.wi}>⊙ {currentPos.pressure_hpa.toFixed(0)}hPa</Text>}
-        {lidarAlt!==null&&<Text style={s.wi}>⛰ {lidarAlt.toFixed(1)}m</Text>}
+        <Text style={s.wi}>ð¡ {weather?`${weather.temp_c}Â°C`:"--"}</Text>
+        <Text style={s.wi}>ð¨ {windLabel}{gustExtra}</Text>
+        {currentPos?.pressure_hpa&&<Text style={s.wi}>â {currentPos.pressure_hpa.toFixed(0)}hPa</Text>}
+        {lidarAlt!==null&&<Text style={s.wi}>â° {lidarAlt.toFixed(1)}m</Text>}
         <View style={s.dots}>
           {sensorDots.map(({label,key})=>(
             <View key={key} style={[s.sdot,{backgroundColor:running&&(sensorAvail as any)[key]?"#00E5FF":"#2a2a2a"}]}>
@@ -240,8 +245,8 @@ export default function WalkLoggerScreen() {
         <View style={s.stat}><Text style={s.sv}>{speedKmh}</Text><Text style={s.sl}>KM/H</Text></View>
         <View style={s.stat}><Text style={s.sv}>{currentPos?.cadence_spm??("--")}</Text><Text style={s.sl}>SPM</Text></View>
         <View style={s.stat}>
-          <Text style={s.sv}>{heartRate!==null?heartRate:(currentPos?.altitude!=null?currentPos.altitude.toFixed(0)+"m":"--")}</Text>
-          <Text style={s.sl}>{heartRate!==null?"BPM":"ALT"}</Text>
+          <Text style={s.sv}>{hkData.heart_rate!==null?hkData.heart_rate:(currentPos?.altitude!=null?currentPos.altitude.toFixed(0)+"m":"--")}</Text>
+          <Text style={s.sl}>{hkData.heart_rate!==null?"BPM♥":"ALT"}</Text>
         </View>
       </View>
 
@@ -266,11 +271,11 @@ export default function WalkLoggerScreen() {
 
       <View style={s.controls}>
         {!running
-          ?<Pressable style={[s.btn,s.btnStart]} onPress={handleStart}><Text style={s.btnT}>▶  START</Text></Pressable>
-          :<Pressable style={[s.btn,s.btnStop]}  onPress={handleStop}><Text style={s.btnT}>■  STOP</Text></Pressable>
+          ?<Pressable style={[s.btn,s.btnStart]} onPress={handleStart}><Text style={s.btnT}>â¶  START</Text></Pressable>
+          :<Pressable style={[s.btn,s.btnStop]}  onPress={handleStop}><Text style={s.btnT}>â   STOP</Text></Pressable>
         }
         <Pressable style={[s.btn,s.btnExport,trail.length===0&&s.btnDis]} onPress={handleExport} disabled={trail.length===0}>
-          <Text style={s.btnT}>↑  EXPORT</Text>
+          <Text style={s.btnT}>â  EXPORT</Text>
         </Pressable>
       </View>
     </View>
