@@ -193,7 +193,7 @@ export default function WalkLoggerScreen() {
       const fg = await Location.requestForegroundPermissionsAsync();
       if (fg.status !== "granted") { Alert.alert("Permission needed", "Foreground location required."); return; }
       const bg = await Location.requestBackgroundPermissionsAsync();
-      if (bg.status !== "granted") { Alert.alert("Permission needed", "Settings → Privacy → Location Services → Walk Logger → Always."); return; }
+      if (bg.status !== "granted") { Alert.alert("Permission needed", "Settings â Privacy â Location Services â Walk Logger â Always."); return; }
       await FileSystem.deleteAsync(LOG_FILE, { idempotent: true });
       trailRef.current = []; setTrail([]); setPointCount(0); setElapsed(0); elapsedRef.current = 0;
       await Location.startLocationUpdatesAsync(LOCATION_TASK, {
@@ -204,7 +204,7 @@ export default function WalkLoggerScreen() {
       startAutosave(note, tripType);
       if (currentPos) {
         fetchWeather(currentPos.latitude, currentPos.longitude);
-        weatherPoll.current = setInterval(() => fetchWeather(currentPos.latitude, currentPos.longitude), 5*60*1000);
+        weatherPoll.current = setInterval(() => fetchWeather(currentPos.latitude, currentPos.longitude), 30*1000);
       }
       setRunning(true);
     } catch (e: any) { Alert.alert("Start failed", String(e)); }
@@ -255,7 +255,7 @@ export default function WalkLoggerScreen() {
   const speedKmh   = currentPos?.speed_mps != null ? (currentPos.speed_mps * 3.6).toFixed(1) : "--";
   const trailCoords = trail.map(p => ({ latitude: p.latitude, longitude: p.longitude }));
   const windLabel  = weather ? `${weather.wind_kph} km/h ${degToDir(weather.wind_dir_deg)}` : "--";
-  const gustExtra  = weather && weather.gust_kph > weather.wind_kph + 5 ? ` ↑${weather.gust_kph}` : "";
+  const gustExtra  = weather && weather.gust_kph > weather.wind_kph + 5 ? ` â${weather.gust_kph}` : "";
 
   return (
     <View style={styles.container}>
@@ -268,9 +268,9 @@ export default function WalkLoggerScreen() {
 
       {weather && (
         <View style={styles.weatherBar}>
-          <Text style={styles.weatherItem}>🌡 {weather.temp_c}°C</Text>
-          <Text style={styles.weatherItem}>💨 {windLabel}{gustExtra}</Text>
-          {lidarAlt !== null && <Text style={styles.weatherItem}>⛰ {lidarAlt.toFixed(1)}m</Text>}
+          <Text style={styles.weatherItem}>ð¡ {weather.temp_c}Â°C</Text>
+          <Text style={styles.weatherItem}>ð¨ {windLabel}{gustExtra}</Text>
+          {lidarAlt !== null && <Text style={styles.weatherItem}>â° {lidarAlt.toFixed(1)}m</Text>}
         </View>
       )}
 
@@ -305,11 +305,11 @@ export default function WalkLoggerScreen() {
 
       <View style={styles.controls}>
         {!running
-          ? <Pressable style={[styles.btn, styles.btnStart]} onPress={handleStart}><Text style={styles.btnText}>▶  START</Text></Pressable>
-          : <Pressable style={[styles.btn, styles.btnStop]}  onPress={handleStop}><Text style={styles.btnText}>■  STOP</Text></Pressable>
+          ? <Pressable style={[styles.btn, styles.btnStart]} onPress={handleStart}><Text style={styles.btnText}>â¶  START</Text></Pressable>
+          : <Pressable style={[styles.btn, styles.btnStop]}  onPress={handleStop}><Text style={styles.btnText}>â   STOP</Text></Pressable>
         }
         <Pressable style={[styles.btn, styles.btnExport, trail.length===0 && styles.btnDisabled]} onPress={handleExport} disabled={trail.length===0}>
-          <Text style={styles.btnText}>↑  EXPORT</Text>
+          <Text style={styles.btnText}>â  EXPORT</Text>
         </Pressable>
       </View>
     </View>
