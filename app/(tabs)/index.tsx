@@ -227,10 +227,10 @@ export default function WalkLoggerScreen() {
       </MapView>
 
       <View style={s.weatherBar}>
-        <Text style={s.wi}>ð¡ {weather?`${weather.temp_c}Â°C`:"--"}</Text>
-        <Text style={s.wi}>ð¨ {windLabel}{gustExtra}</Text>
-        {currentPos?.pressure_hpa&&<Text style={s.wi}>â {currentPos.pressure_hpa.toFixed(0)}hPa</Text>}
-        {lidarAlt!==null&&<Text style={s.wi}>â° {lidarAlt.toFixed(1)}m</Text>}
+        <Text style={s.wi}>TEMP {weather?`${weather.temp_c}C`:"--"}</Text>
+        <Text style={s.wi}>WIND {windLabel}{gustExtra}</Text>
+        {currentPos?.pressure_hpa&&<Text style={s.wi}>BARO {currentPos.pressure_hpa.toFixed(0)}hPa</Text>}
+        {lidarAlt!==null&&<Text style={s.wi}>ALT {lidarAlt.toFixed(1)}m</Text>}
         <View style={s.dots}>
           {sensorDots.map(({label,key})=>(
             <View key={key} style={[s.sdot,{backgroundColor:running&&(sensorAvail as any)[key]?"#00E5FF":"#2a2a2a"}]}>
@@ -271,11 +271,11 @@ export default function WalkLoggerScreen() {
 
       <View style={s.controls}>
         {!running
-          ?<Pressable style={[s.btn,s.btnStart]} onPress={handleStart}><Text style={s.btnT}>â¶  START</Text></Pressable>
-          :<Pressable style={[s.btn,s.btnStop]}  onPress={handleStop}><Text style={s.btnT}>â   STOP</Text></Pressable>
+          ?<Pressable style={[s.btn,s.btnStart]} onPress={handleStart}><Text style={s.btnT}>▶ START</Text></Pressable>
+          :<Pressable style={[s.btn,s.btnStop]}  onPress={handleStop}><Text style={s.btnT}>■ STOP</Text></Pressable>
         }
         <Pressable style={[s.btn,s.btnExport,trail.length===0&&s.btnDis]} onPress={handleExport} disabled={trail.length===0}>
-          <Text style={s.btnT}>â  EXPORT</Text>
+          <Text style={s.btnT}>↑ EXPORT</Text>
         </Pressable>
       </View>
     </View>
