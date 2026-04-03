@@ -17,8 +17,20 @@ def upsert(rows):
         headers={"apikey": SK, "Authorization": "Bearer " + SK,
                  "Content-Type": "application/json",
                  "Prefer": "resolution=merge-duplicates,return=minimal"})
-    with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+    with urllib.request.urlopen(req, context=ctx, timeout=60) as r:
         return r.status
+
+def handle_error(e, rows):
+    print("  insert error:", str(e)[:80])
+    print("  trying one-by-one...")
+    ok = 0
+    for row in rows:
+        try:
+            upsert([row])
+            ok += 1
+        except:
+            pass
+    print("  inserted", ok, "of", len(rows))
 
 LOCS = [("bronx_nyc",40.8699,-73.8318),("durham_nc",35.994,-78.8986),("raleigh_nc",35.7796,-78.6382),("banjul_alt",13.5,-16.0)]
 rows = []
@@ -79,7 +91,12 @@ for name,lat,lon in LOCS:
 
 print("\nInserting",len(rows),"rows...")
 for i in range(0,len(rows),200):
-    print("  batch",i//200+1,"HTTP",upsert(rows[i:i+200]))
+    batch = rows[i:i+200]
+    try:
+        s = upsert(batch)
+        print("  batch",i//200+1,"HTTP",s)
+    except Exception as e:
+        handle_error(e, batch)
 
 print("\n--- BRONX NYC THRESHOLD ---")
 bronx = {}
