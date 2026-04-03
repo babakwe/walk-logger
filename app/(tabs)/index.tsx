@@ -19,11 +19,26 @@ const TRIP_TYPES = ["walk", "transit", "run"] as const;
 type TripType = typeof TRIP_TYPES[number];
 const WIND_DIRS = ["N","NE","E","SE","S","SW","W","NW"];
 function degToDir(deg: number) { return WIND_DIRS[Math.round(deg / 45) % 8]; }
-function pollenEmoji(upi: number | null): string { if (upi === null) return "🌿"; if (upi === 0) return "✅"; if (upi <= 1) return "🟢"; if (upi <= 2) return "🟡"; if (upi <= 3) return "🟠"; if (upi <= 4) return "🔴"; return "🟣"; }
-function tempEmoji(c: number | null): string { if (c === null) return "🌡️"; if (c <= 0) return "🥶"; if (c <= 10) return "🧥"; if (c <= 18) return "🌤️"; if (c <= 25) return "☀️"; if (c <= 32) return "🥵"; return "🔥"; }
-function windEmoji(kph: number | null): string { if (kph === null) return "🌬️"; if (kph < 5) return "🍃"; if (kph < 20) return "💨"; if (kph < 40) return "🌬️"; return "🌪️"; }
-function hrEmoji(bpm: number | null): string { if (bpm === null) return "💓"; if (bpm < 60) return "😴"; if (bpm < 90) return "🚶"; if (bpm < 120) return "🏃"; if (bpm < 150) return "⚡"; return "🔥"; }
-function spo2Emoji(pct: number | null): string { if (pct === null) return "🩸"; if (pct >= 97) return "✅"; if (pct >= 94) return "🟡"; return "🔴"; }
+function pollenEmoji(upi: number | null): string {
+  if (upi === null) return "🌿";
+  if (upi === 0) return "✅";
+  if (upi < 1.5) return "🟢";
+  if (upi < 3) return "🟡";
+  if (upi < 4) return "🟠";
+  return "🔴";
+}
+function pollenAdvice(upi: number | null, windKph: number | null): string {
+  if (upi === null || upi === 0) return "";
+  const wind = windKph ?? 0;
+  const advice: string[] = [];
+  if (upi >= 1.5) advice.push("😷");
+  if (upi >= 3 || (upi >= 1.5 && wind > 20)) advice.push("🪟");
+  return advice.length ? " " + advice.join("") : "";
+}
+function tempEmoji(c: number | null): string { if (c === null) return "ð¡ï¸"; if (c <= 0) return "ð¥¶"; if (c <= 10) return "ð§¥"; if (c <= 18) return "ð¤ï¸"; if (c <= 25) return "âï¸"; if (c <= 32) return "ð¥µ"; return "ð¥"; }
+function windEmoji(kph: number | null): string { if (kph === null) return "ð¬ï¸"; if (kph < 5) return "ð"; if (kph < 20) return "ð¨"; if (kph < 40) return "ð¬ï¸"; return "ðªï¸"; }
+function hrEmoji(bpm: number | null): string { if (bpm === null) return "ð"; if (bpm < 60) return "ð´"; if (bpm < 90) return "ð¶"; if (bpm < 120) return "ð"; if (bpm < 150) return "â¡"; return "ð¥"; }
+function spo2Emoji(pct: number | null): string { if (pct === null) return "ð©¸"; if (pct >= 97) return "â"; if (pct >= 94) return "ð¡"; return "ð´"; }
 
 type GpsPoint = {
   timestamp_ms: number; iso_time: string; latitude: number; longitude: number;
@@ -135,7 +150,7 @@ export default function WalkLoggerScreen() {
   const fmt = (s: number) => Math.floor(s/60).toString().padStart(2,"0") + ":" + (s%60).toString().padStart(2,"0");
   const speedKmh = currentPos?.speed_mps != null ? (Math.max(0, currentPos.speed_mps) * 3.6).toFixed(1) : "--";
   const trailCoords = trail.map(p => ({ latitude: p.latitude, longitude: p.longitude }));
-  const tempStr = weather ? `${weather.temp_c}°` : "--";
+  const tempStr = weather ? `${weather.temp_c}Â°` : "--";
   const windDir = weather ? degToDir(weather.wind_dir_deg) : "";
   const windStr = weather ? `${weather.wind_kph}${windDir}` : "--";
   const gustStr = weather && weather.gust_kph > weather.wind_kph + 5 ? `G${weather.gust_kph}` : "";
@@ -154,27 +169,27 @@ export default function WalkLoggerScreen() {
         {currentPos && (<Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}><View style={st.dot} /></Marker>)}
       </MapView>
       <View style={st.outerBar}>
-        <Text style={st.barLabel}>🌍 OUTER</Text>
+        <Text style={st.barLabel}>ð OUTER</Text>
         <Text style={st.wi}>{tempEmoji(weather?.temp_c ?? null)} {tempStr}</Text>
         <Text style={st.wi}>{windEmoji(weather?.wind_kph ?? null)} {windStr}{gustStr ? ` ${gustStr}` : ""}</Text>
-        {baroStr && <Text style={st.wi}>🔵 {baroStr}hPa</Text>}
-        <Text style={st.wi}>{pollenEmoji(dominantUPI > 0 ? dominantUPI : null)} {pollen ? `${pollen.dominant ?? "POLLEN"} ${dominantUPI}/5` : "--"}</Text>
+        {baroStr && <Text style={st.wi}>ðµ {baroStr}hPa</Text>}
+        <Text style={st.wi}>{pollenEmoji(dominantUPI > 0 ? dominantUPI : null)} {pollen ? `${pollen.dominant ?? "POLLEN"} ${dominantUPI}/5` : "--"}{pollenAdvice(dominantUPI > 0 ? dominantUPI : null, weather?.wind_kph ?? null)}</Text>
         <View style={st.dots}>{sensorDots.map(({ label, key }) => (<View key={key} style={[st.sdot, { backgroundColor: running && (sensorAvail as any)[key] ? "#00E5FF" : "#2a2a2a" }]}><Text style={st.sdotL}>{label}</Text></View>))}</View>
       </View>
       <Pressable style={st.innerToggle} onPress={() => setShowInner(v => !v)}>
-        <Text style={st.barLabel}>💙 INNER {!hasInnerData ? "(no device)" : ""} {showInner ? "▲" : "▼"}</Text>
+        <Text style={st.barLabel}>ð INNER {!hasInnerData ? "(no device)" : ""} {showInner ? "â²" : "â¼"}</Text>
         {!showInner && activeHR && <Text style={st.wi}>{hrEmoji(activeHR)} {activeHR} BPM {hrSource ? `(${hrSource})` : ""}</Text>}
         <View style={[st.bleDot, { backgroundColor: bleState.status === "connected" ? "#00C853" : bleState.status === "scanning" ? "#FFA000" : bleState.status === "connecting" ? "#0288D1" : "#333" }]} />
         <Text style={st.bleLabel}>{bleState.status === "connected" ? bleState.deviceName ?? "HRM" : bleState.status.toUpperCase()}</Text>
-        {bleState.status === "disconnected" && <Pressable onPress={bleRescan} style={st.rescanBtn}><Text style={st.rescanT}>⟳</Text></Pressable>}
+        {bleState.status === "disconnected" && <Pressable onPress={bleRescan} style={st.rescanBtn}><Text style={st.rescanT}>â³</Text></Pressable>}
       </Pressable>
       {showInner && (
         <View style={st.innerBar}>
           <View style={st.innerRow}>
             <View style={st.innerStat}><Text style={st.isv}>{hrEmoji(activeHR)} {activeHR ?? "--"}</Text><Text style={st.isl}>BPM</Text></View>
             <View style={st.innerStat}><Text style={st.isv}>{spo2Emoji(hkData.spo2)} {hkData.spo2 ? `${hkData.spo2}%` : "--"}</Text><Text style={st.isl}>SpO2</Text></View>
-            <View style={st.innerStat}><Text style={st.isv}>💗 {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View>
-            <View style={st.innerStat}><Text style={st.isv}>🌡️ {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}°` : "--"}</Text><Text style={st.isl}>WRIST</Text></View>
+            <View style={st.innerStat}><Text style={st.isv}>ð {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View>
+            <View style={st.innerStat}><Text style={st.isv}>ð¡ï¸ {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}Â°` : "--"}</Text><Text style={st.isl}>WRIST</Text></View>
           </View>
         </View>
       )}
