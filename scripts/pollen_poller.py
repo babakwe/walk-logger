@@ -1,4 +1,4 @@
-import urllib.request, json, ssl, time, datetime
+import urllib.request, json, ssl, time, datetime, subprocess, sys
 
 SK = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5Znl1dmlrcW14Y2F6cWdxb3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjY2ODc1OCwiZXhwIjoyMDg4MjQ0NzU4fQ.jPRln_LQRrIGF5iA-H_DBsRW2FjPaf3ys5yBvy908eo"
 BASE = "https://xyfyuvikqmxcazqgqoxb.supabase.co"
@@ -11,10 +11,10 @@ LOCATIONS = [
     ("bronx_10463", 40.8815, -73.9146),
 ]
 
-def upsert_row(row):
+def sb_post(path, row):
     body = json.dumps(row).encode()
     req = urllib.request.Request(
-        BASE + "/rest/v1/pollen_history",
+        BASE + path,
         data=body, method="POST",
         headers={
             "apikey": SK, "Authorization": "Bearer " + SK,
@@ -22,13 +22,35 @@ def upsert_row(row):
             "Prefer": "resolution=merge-duplicates,return=minimal"
         }
     )
-    with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
-        return r.status
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+
+def fetch_pollencom_historic():
+    try:
+        cmd = [
+            "curl", "-s",
+            "-H", "Accept: application/json",
+            "-H", "Referer: https://www.pollen.com/forecast/historic/pollen/10475",
+            "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "-H", "X-Requested-With: XMLHttpRequest",
+            "https://www.pollen.com/api/forecast/historic/pollen/10475"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            periods = (data.get("Location") or {}).get("periods") or []
+            return periods
+    except Exception as e:
+        print("    curl ERR: " + str(e)[:50])
+    return []
 
 def run_daily_poller():
     print("Running daily pollen poller - " + str(datetime.date.today()))
     today = str(datetime.date.today())
-    ok = 0
+    ok = 0; skip = 0
 
     for name, lat, lon in LOCATIONS:
         print("  Fetching Google Pollen: " + name)
@@ -55,31 +77,41 @@ def run_daily_poller():
                     v = (p.get("indexInfo") or {}).get("value") or 0
                     if v > domv:
                         domv = v; dom = p.get("displayName")
-                row = {"date": dt, "location_name": name,
-                       "lat": lat, "lon": lon,
-                       "tree_upi": gu("TREE"), "grass_upi": gu("GRASS"), "weed_upi": gu("WEED"),
-                       "dominant_type": dom, "dominant_upi": domv or None,
-                       "source": "google_pollen"}
-                try:
-                    upsert_row(row); ok += 1
-                except Exception as e:
-                    print("    row ERR " + dt + ": " + str(e)[:40])
+                status = sb_post("/rest/v1/pollen_history", {
+                    "date": dt, "location_name": name,
+                    "lat": lat, "lon": lon,
+                    "tree_upi": gu("TREE"), "grass_upi": gu("GRASS"), "weed_upi": gu("WEED"),
+                    "dominant_type": dom, "dominant_upi": domv or None,
+                    "source": "google_pollen"
+                })
+                if status in (200, 201): ok += 1
+                elif status == 409: skip += 1
+                else: print("    row ERR " + dt + ": HTTP " + str(status))
             print("    done")
         except Exception as e:
             print("    fetch ERR: " + str(e)[:60])
         time.sleep(1)
 
-    print("  Google: " + str(ok) + " rows upserted")
+    print("  Google: " + str(ok) + " new, " + str(skip) + " already existed")
 
-    # pollen.com: scrape their public JSON (requires browser-like headers)
-    # Note: run this from a browser session or use curl with cookies.
-    # Skipping API call here - data is loaded via browser session separately.
-    print("  pollen.com: loaded via browser session (see pollen_pollencom_load.py)")
+    print("  Fetching pollen.com (curl)...")
+    periods = fetch_pollencom_historic()
+    pc_ok = 0
+    for p in periods:
+        dt = p.get("Period", "")[:10]
+        idx = p.get("Index")
+        if dt and idx is not None:
+            status = sb_post("/rest/v1/pollen_history", {
+                "date": dt, "location_name": "bronx_10475_pollencom",
+                "lat": 40.8699, "lon": -73.8318,
+                "tree_upi": None, "grass_upi": None, "weed_upi": None,
+                "dominant_upi": idx, "dominant_type": None,
+                "source": "pollen_com"
+            })
+            if status in (200, 201): pc_ok += 1
+    print("  pollen.com: " + str(len(periods)) + " periods, " + str(pc_ok) + " new")
+
     print("Daily poll complete.")
 
 if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "poll":
-        run_daily_poller()
-    else:
-        run_daily_poller()
+    run_daily_poller()
