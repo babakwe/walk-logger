@@ -23,11 +23,11 @@ const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 const POLLEN_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_POLLEN_KEY ?? "";
 
 function degToDir(deg: number) { return WIND_DIRS[Math.round(deg / 45) % 8]; }
-function pollenEmoji(upi: number | null): string { if (upi === null) return "\u{1F33F}"; if (upi === 0) return "\u2705"; if (upi <= 1) return "\u{1F7E2}"; if (upi <= 2) return "\u{1F7E1}"; if (upi <= 3) return "\u{1F7E0}"; if (upi <= 4) return "\u{1F534}"; return "\u{1F7E3}"; }
-function tempEmoji(c: number | null): string { if (c === null) return "\u{1F321}\uFE0F"; if (c <= 0) return "\u{1F976}"; if (c <= 10) return "\u{1F9E5}"; if (c <= 18) return "\u{1F324}\uFE0F"; if (c <= 25) return "\u2600\uFE0F"; if (c <= 32) return "\u{1F975}"; return "\u{1F525}"; }
-function windEmoji(kph: number | null): string { if (kph === null) return "\u{1F32C}\uFE0F"; if (kph < 5) return "\u{1F343}"; if (kph < 20) return "\u{1F4A8}"; if (kph < 40) return "\u{1F32C}\uFE0F"; return "\u{1F32A}\uFE0F"; }
-function hrEmoji(bpm: number | null): string { if (bpm === null) return "\u{1F493}"; if (bpm < 60) return "\u{1F634}"; if (bpm < 90) return "\u{1F6B6}"; if (bpm < 120) return "\u{1F3C3}"; if (bpm < 150) return "\u26A1"; return "\u{1F525}"; }
-function spo2Emoji(pct: number | null): string { if (pct === null) return "\u{1FA78}"; if (pct >= 97) return "\u2705"; if (pct >= 94) return "\u{1F7E1}"; return "\u{1F534}"; }
+function pollenEmoji(upi: number | null): string { if (upi === null) return "🌿"; if (upi === 0) return "✅"; if (upi <= 1) return "🟢"; if (upi <= 2) return "🟡"; if (upi <= 3) return "🟠"; if (upi <= 4) return "🔴"; return "🟣"; }
+function tempEmoji(c: number | null): string { if (c === null) return "🌡️"; if (c <= 0) return "🥶"; if (c <= 10) return "🧥"; if (c <= 18) return "🌤️"; if (c <= 25) return "\u2600\uFE0F"; if (c <= 32) return "🥵"; return "🔥"; }
+function windEmoji(kph: number | null): string { if (kph === null) return "🌬️"; if (kph < 5) return "🍃"; if (kph < 20) return "💨"; if (kph < 40) return "🌬️"; return "🌪️"; }
+function hrEmoji(bpm: number | null): string { if (bpm === null) return "💓"; if (bpm < 60) return "😴"; if (bpm < 90) return "🚶"; if (bpm < 120) return "🏃"; if (bpm < 150) return "\u26A1"; return "🔥"; }
+function spo2Emoji(pct: number | null): string { if (pct === null) return "🩸"; if (pct >= 97) return "✅"; if (pct >= 94) return "🟡"; return "🔴"; }
 
 function gradeColor(slope: number): string {
   const abs = Math.abs(slope);
@@ -127,7 +127,7 @@ function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: ()
     const row = { date: today, eyes_severity: eyesSev, eyes_itchy: eyesItchy, eyes_watery: eyesWatery, eyes_strings: eyesStrings, eyes_tap_cleans: eyesTaps, nose_severity: noseSev, nose_runny: noseRunny, nose_stuffy: noseStuffy, nose_sneezing: noseSneezing, sneezing_bouts: sneezingBouts, inner_ear_itch: earItch, ear_sound_made: earSound, lungs_tight: lungsT, lungs_coughing: lungsC, overall_severity: overall, went_outside: wentOut, notes, google_tree_upi: todayPollen?.tree_upi ?? null, fordham_grains_m3: todayPollen?.fordham ?? null, pollen_com_score: null };
     try {
       await fetch(`${SB_URL}/rest/v1/pollen_symptom_log`, { method: "POST", headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) });
-      Alert.alert("Saved", "Today's symptoms logged \u2713"); onClose();
+      Alert.alert("Saved", "Today's symptoms logged ✓"); onClose();
     } catch { Alert.alert("Error", "Could not save."); }
     setSaving(false);
   };
@@ -142,41 +142,41 @@ function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: ()
     <View style={sv.toggleRow}><Text style={sv.toggleLabel}>{label}</Text><Switch value={val} onValueChange={setVal} trackColor={{ false: "#333", true: "#00E5FF" }} thumbColor={val ? "#fff" : "#666"} /></View>
   );
   const Counter = ({ label, val, setVal }: { label: string; val: number; setVal: (n: number) => void }) => (
-    <View style={sv.ctrRow}><Text style={sv.ctrLabel}>{label}</Text><View style={sv.ctrBtns}><Pressable style={sv.ctrBtn} onPress={() => setVal(Math.max(0, val-1))}><Text style={sv.ctrBtnT}>\u2212</Text></Pressable><Text style={sv.ctrVal}>{val}</Text><Pressable style={sv.ctrBtn} onPress={() => setVal(val+1)}><Text style={sv.ctrBtnT}>+</Text></Pressable></View></View>
+    <View style={sv.ctrRow}><Text style={sv.ctrLabel}>{label}</Text><View style={sv.ctrBtns}><Pressable style={sv.ctrBtn} onPress={() => setVal(Math.max(0, val-1))}><Text style={sv.ctrBtnT}>−</Text></Pressable><Text style={sv.ctrVal}>{val}</Text><Pressable style={sv.ctrBtn} onPress={() => setVal(val+1)}><Text style={sv.ctrBtnT}>+</Text></Pressable></View></View>
   );
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={sv.container}>
         <View style={sv.header}>
-          <Text style={sv.title}>\u{1F33F} Pollen Symptom Log</Text>
+          <Text style={sv.title}>🌿 Pollen Symptom Log</Text>
           <Text style={sv.date}>{today}</Text>
-          {todayPollen && <Text style={sv.pollenInfo}>{todayPollen.tree_upi != null ? `Google Tree UPI: ${todayPollen.tree_upi}/5  ` : ""}{todayPollen.fordham != null ? `Fordham: ${todayPollen.fordham} g/m\u00B3` : ""}</Text>}
-          <Pressable style={sv.closeBtn} onPress={onClose}><Text style={sv.closeBtnT}>\u2715</Text></Pressable>
+          {todayPollen && <Text style={sv.pollenInfo}>{todayPollen.tree_upi != null ? `Google Tree UPI: ${todayPollen.tree_upi}/5  ` : ""}{todayPollen.fordham != null ? `Fordham: ${todayPollen.fordham} g/m³` : ""}</Text>}
+          <Pressable style={sv.closeBtn} onPress={onClose}><Text style={sv.closeBtnT}>✕</Text></Pressable>
         </View>
         <ScrollView style={sv.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
-          <Text style={sv.section}>\u{1F441} EYES</Text>
+          <Text style={sv.section}>👁 EYES</Text>
           <SevRow label="Severity (0-5)" val={eyesSev} setVal={setEyesSev} />
           <Toggle label="Itchy" val={eyesItchy} setVal={setEyesItchy} />
           <Toggle label="Watery" val={eyesWatery} setVal={setEyesWatery} />
           <Toggle label="Strings / mucus" val={eyesStrings} setVal={setEyesStrings} />
           <Counter label="Tap cleans (sink)" val={eyesTaps} setVal={setEyesTaps} />
-          <Text style={sv.section}>\u{1F443} NOSE</Text>
+          <Text style={sv.section}>👃 NOSE</Text>
           <SevRow label="Severity (0-5)" val={noseSev} setVal={setNoseSev} />
           <Toggle label="Runny" val={noseRunny} setVal={setNoseRunny} />
           <Toggle label="Stuffy / blocked" val={noseStuffy} setVal={setNoseStuffy} />
           <Toggle label="Sneezing" val={noseSneezing} setVal={setNoseSneezing} />
           <Counter label="Sneezing bouts" val={sneezingBouts} setVal={setSneezingBouts} />
-          <Text style={sv.section}>\u{1F442} EARS</Text>
+          <Text style={sv.section}>👂 EARS</Text>
           <Toggle label="Inner ear itch" val={earItch} setVal={setEarItch} />
           <Toggle label="Made the sound to relieve" val={earSound} setVal={setEarSound} />
-          <Text style={sv.section}>\u{1FAC1} LUNGS</Text>
+          <Text style={sv.section}>🫁 LUNGS</Text>
           <Toggle label="Tight / pressure" val={lungsT} setVal={setLungsT} />
           <Toggle label="Coughing" val={lungsC} setVal={setLungsC} />
-          <Text style={sv.section}>\u{1F4CA} OVERALL</Text>
+          <Text style={sv.section}>📊 OVERALL</Text>
           <SevRow label="Overall severity (0-5)" val={overall} setVal={setOverall} />
           <Toggle label="Went outside today" val={wentOut} setVal={setWentOut} />
-          <Text style={sv.section}>\u{1F4DD} NOTES</Text>
+          <Text style={sv.section}>📝 NOTES</Text>
           <TextInput style={sv.notes} placeholder="Any extra detail..." placeholderTextColor="#555" value={notes} onChangeText={setNotes} multiline numberOfLines={3} />
           <Pressable style={[sv.saveBtn, saving && sv.saveBtnDis]} onPress={save} disabled={saving}>
             <Text style={sv.saveBtnT}>{saving ? "Saving..." : "SAVE TODAY"}</Text>
@@ -280,7 +280,7 @@ export default function WalkLoggerScreen() {
   const fmt = (s: number) => Math.floor(s/60).toString().padStart(2,"0") + ":" + (s%60).toString().padStart(2,"0");
   const speedKmh = currentPos?.speed_mps != null ? (Math.max(0, currentPos.speed_mps) * 3.6).toFixed(1) : "--";
   const trailCoords = trail.map(p => ({ latitude: p.latitude, longitude: p.longitude }));
-  const tempStr = weather ? `${weather.temp_c}\u00B0` : "--";
+  const tempStr = weather ? `${weather.temp_c}°` : "--";
   const windDir = weather ? degToDir(weather.wind_dir_deg) : "";
   const windStr = weather ? `${weather.wind_kph}${windDir}` : "--";
   const gustStr = weather && weather.gust_kph > weather.wind_kph + 5 ? `G${weather.gust_kph}` : "";
@@ -308,22 +308,22 @@ export default function WalkLoggerScreen() {
         {currentPos && (<Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}><View style={st.dot} /></Marker>)}
       </MapView>
       <View style={st.outerBar}>
-        <Text style={st.barLabel}>\u{1F30D} OUTER</Text>
+        <Text style={st.barLabel}>🌍 OUTER</Text>
         <Text style={st.wi}>{tempEmoji(weather?.temp_c ?? null)} {tempStr}</Text>
         <Text style={st.wi}>{windEmoji(weather?.wind_kph ?? null)} {windStr}{gustStr ? ` ${gustStr}` : ""}</Text>
-        {baroStr && <Text style={st.wi}>\u{1F535} {baroStr}hPa</Text>}
+        {baroStr && <Text style={st.wi}>🔵 {baroStr}hPa</Text>}
         <Text style={st.wi}>{pollenLine}</Text>
-        <Pressable style={st.surveyBtn} onPress={() => setShowSurvey(true)}><Text style={st.surveyBtnT}>\u{1F33F}</Text></Pressable>
+        <Pressable style={st.surveyBtn} onPress={() => setShowSurvey(true)}><Text style={st.surveyBtnT}>🌿</Text></Pressable>
         <View style={st.dots}>{sensorDots.map(({ label, key }) => (<View key={key} style={[st.sdot, { backgroundColor: running && (sensorAvail as any)[key] ? "#00E5FF" : "#2a2a2a" }]}><Text style={st.sdotL}>{label}</Text></View>))}</View>
       </View>
       <Pressable style={st.innerToggle} onPress={() => setShowInner(v => !v)}>
-        <Text style={st.barLabel}>\u{1F499} INNER {!hasInnerData ? "(no device)" : ""} {showInner ? "\u25B2" : "\u25BC"}</Text>
+        <Text style={st.barLabel}>💙 INNER {!hasInnerData ? "(no device)" : ""} {showInner ? "▲" : "▼"}</Text>
         {!showInner && activeHR && <Text style={st.wi}>{hrEmoji(activeHR)} {activeHR} BPM {hrSource ? `(${hrSource})` : ""}</Text>}
         <View style={[st.bleDot, { backgroundColor: bleState.status === "connected" ? "#00C853" : bleState.status === "scanning" ? "#FFA000" : bleState.status === "connecting" ? "#0288D1" : "#333" }]} />
         <Text style={st.bleLabel}>{bleState.status === "connected" ? bleState.deviceName ?? "HRM" : bleState.status.toUpperCase()}</Text>
-        {bleState.status === "disconnected" && <Pressable onPress={bleRescan} style={st.rescanBtn}><Text style={st.rescanT}>\u27F3</Text></Pressable>}
+        {bleState.status === "disconnected" && <Pressable onPress={bleRescan} style={st.rescanBtn}><Text style={st.rescanT}>⟳</Text></Pressable>}
       </Pressable>
-      {showInner && (<View style={st.innerBar}><View style={st.innerRow}><View style={st.innerStat}><Text style={st.isv}>{hrEmoji(activeHR)} {activeHR ?? "--"}</Text><Text style={st.isl}>BPM</Text></View><View style={st.innerStat}><Text style={st.isv}>{spo2Emoji(hkData.spo2)} {hkData.spo2 ? `${hkData.spo2}%` : "--"}</Text><Text style={st.isl}>SpO2</Text></View><View style={st.innerStat}><Text style={st.isv}>\u{1F497} {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View><View style={st.innerStat}><Text style={st.isv}>\u{1F321}\uFE0F {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}\u00B0` : "--"}</Text><Text style={st.isl}>WRIST</Text></View></View></View>)}
+      {showInner && (<View style={st.innerBar}><View style={st.innerRow}><View style={st.innerStat}><Text style={st.isv}>{hrEmoji(activeHR)} {activeHR ?? "--"}</Text><Text style={st.isl}>BPM</Text></View><View style={st.innerStat}><Text style={st.isv}>{spo2Emoji(hkData.spo2)} {hkData.spo2 ? `${hkData.spo2}%` : "--"}</Text><Text style={st.isl}>SpO2</Text></View><View style={st.innerStat}><Text style={st.isv}>💗 {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View><View style={st.innerStat}><Text style={st.isv}>🌡️ {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}°` : "--"}</Text><Text style={st.isl}>WRIST</Text></View></View></View>)}
       <View style={st.statsBar}>
         <View style={st.stat}><Text style={st.sv}>{fmt(elapsed)}</Text><Text style={st.sl}>TIME</Text></View>
         <View style={st.stat}><Text style={st.sv}>{speedKmh}</Text><Text style={st.sl}>KM/H</Text></View>
@@ -353,7 +353,7 @@ const st = StyleSheet.create({
   outerBar: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", backgroundColor: "#080F1A", paddingVertical: 6, paddingHorizontal: 10, borderTopWidth: 1, borderTopColor: "#1A2030" },
   barLabel: { color: "#445566", fontSize: 9, fontWeight: "700", letterSpacing: 1, marginRight: 6 },
   wi: { color: "#A0B8D0", fontSize: 11, fontWeight: "500", marginRight: 8 },
-  surveyBtn: { marginLeft: "auto" as any, marginRight: 6, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: "#0D2010", borderRadius: 6, borderWidth: 1, borderColor: "#1A4020" },
+  surveyBtn: { marginLeft: 4, marginRight: 6, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: "#0D2010", borderRadius: 6, borderWidth: 1, borderColor: "#1A4020" },
   surveyBtnT: { fontSize: 14 },
   dots: { flexDirection: "row", gap: 3 },
   sdot: { width: 16, height: 16, borderRadius: 3, alignItems: "center", justifyContent: "center" },
