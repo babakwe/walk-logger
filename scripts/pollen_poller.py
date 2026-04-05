@@ -5,19 +5,13 @@ BASE = "https://xyfyuvikqmxcazqgqoxb.supabase.co"
 G_KEY = "AIzaSyCvX9TTFYBTSNT3G5A2X8bOEJOH24f2XFc"
 ctx = ssl.create_default_context()
 
-# Bronx zip codes of interest: 10475 (Coop City), 10458 (Fordham), 10463 (Riverdale)
 LOCATIONS = [
     ("bronx_10475", 40.8699, -73.8318, "10475"),
     ("bronx_10458", 40.8590, -73.8900, "10458"),
     ("bronx_10463", 40.8815, -73.9146, "10463"),
 ]
 
-def get(url):
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
-        return json.loads(r.read())
-
-def upsert_history(rows):
+def upsert(rows):
     body = json.dumps(rows).encode()
     req = urllib.request.Request(
         BASE + "/rest/v1/pollen_history", data=body, method="POST",
@@ -29,9 +23,8 @@ def upsert_history(rows):
 
 def run_daily_poller():
     print("Running daily pollen poller - " + str(datetime.date.today()))
-    rows = []
-    today = datetime.date.today()
-    start = today - datetime.timedelta(days=7)
+    google_rows = []
+    today = str(datetime.date.today())
 
     for name, lat, lon, zipcode in LOCATIONS:
         print("  Fetching Google Pollen: " + name)
@@ -41,29 +34,28 @@ def run_daily_poller():
                    "&location.latitude=" + str(lat) +
                    "&location.longitude=" + str(lon) +
                    "&days=5")
-            d = get(url)
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+                d = json.loads(r.read())
             days = d.get("dailyInfo") or []
             for day in days:
                 yr = str(day["date"]["year"])
                 mo = str(day["date"]["month"]).zfill(2)
                 dy = str(day["date"]["day"]).zfill(2)
                 dt = yr + "-" + mo + "-" + dy
-                def gu(code):
-                    for p in (day.get("pollenTypeInfo") or []):
+                def gu(code, info=day):
+                    for p in (info.get("pollenTypeInfo") or []):
                         if p.get("code") == code:
                             return (p.get("indexInfo") or {}).get("value")
                     return None
-                t = gu("TREE")
-                g = gu("GRASS")
-                w = gu("WEED")
-                dom = None
-                domv = 0
+                t = gu("TREE"); g = gu("GRASS"); w = gu("WEED")
+                dom = None; domv = 0
                 for p in (day.get("pollenTypeInfo") or []):
                     v2 = (p.get("indexInfo") or {}).get("value") or 0
                     if v2 > domv:
                         domv = v2
                         dom = p.get("displayName")
-                rows.append({
+                google_rows.append({
                     "date": dt, "location_name": name,
                     "lat": lat, "lon": lon,
                     "tree_upi": t, "grass_upi": g, "weed_upi": w,
@@ -75,7 +67,14 @@ def run_daily_poller():
             print("    ERR: " + str(e)[:60])
         time.sleep(1)
 
-    # Also fetch pollen.com for 10475 via their API
+    if google_rows:
+        try:
+            s = upsert(google_rows)
+            print("  Google rows inserted: " + str(len(google_rows)) + " HTTP " + str(s))
+        except Exception as e:
+            print("  Google insert ERR: " + str(e)[:60])
+
+    # pollen.com - insert separately (different schema)
     try:
         print("  Fetching pollen.com data...")
         url = "https://www.pollen.com/api/forecast/current/pollen/10475"
@@ -90,35 +89,29 @@ def run_daily_poller():
         for p in periods:
             idx = p.get("Index")
             typ = p.get("Triggers")
-            dt = str(datetime.date.today())
             if idx is not None:
-                rows.append({
-                    "date": dt, "location_name": "bronx_10475_pollencom",
+                row = {
+                    "date": today, "location_name": "bronx_10475_pollencom",
                     "lat": 40.8699, "lon": -73.8318,
+                    "tree_upi": None, "grass_upi": None, "weed_upi": None,
                     "dominant_upi": idx,
                     "dominant_type": str(typ)[:100] if typ else None,
                     "source": "pollen_com"
-                })
-                print("    pollen.com today: " + str(idx) + "/12")
+                }
+                try:
+                    s = upsert([row])
+                    print("    pollen.com today: " + str(idx) + "/12 HTTP " + str(s))
+                except Exception as e:
+                    print("    pollen.com ERR: " + str(e)[:60])
                 break
     except Exception as e:
-        print("    pollen.com ERR: " + str(e)[:60])
-
-    if rows:
-        try:
-            s = upsert_history(rows)
-            print("  Inserted " + str(len(rows)) + " rows: HTTP " + str(s))
-        except Exception as e:
-            print("  Insert ERR: " + str(e)[:60])
+        print("    pollen.com fetch ERR: " + str(e)[:60])
 
     print("Daily poll complete.")
-    return rows
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "poll":
         run_daily_poller()
     else:
-        print("Usage: python3 pollen_poller.py poll")
-        print("Add to crontab: 0 8 * * * python3 /Volumes/5TB1/TownTrip/pollen_poller.py poll >> /Volumes/5TB1/TownTrip/pollen_poll.log 2>&1")
         run_daily_poller()
