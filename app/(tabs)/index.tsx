@@ -13,6 +13,7 @@ import { useBLE } from "../../hooks/useBLE";
 const LOCATION_TASK = "towntrip-background-location";
 const ALCOTT_TRAIL = { latitude: 40.8699, longitude: -73.8318 };
 const LOG_FILE = FileSystem.documentDirectory + "towntrip_trail_points.jsonl";
+const SESSIONS_DIR = FileSystem.documentDirectory + "towntrip_sessions/";
 const AUTOSAVE_FILE = FileSystem.documentDirectory + "towntrip_session_autosave.json";
 const AUTOSAVE_MS = 60000;
 const TRIP_TYPES = ["walk", "transit", "run"] as const;
@@ -201,6 +202,7 @@ export default function WalkLoggerScreen() {
   const [pollen, setPollen] = useState<Pollen|null>(null);
   const [showInner, setShowInner] = useState(false);
   const [showSurvey, setShowSurvey] = useState(false);
+  const [showSessions, setShowSessions] = useState(false);
   const [sessionName] = useState("walk_" + new Date().toISOString().slice(0,16).replace("T","_").replace(":","h"));
   const { snapshot: motionSnapshot, available: sensorAvail } = useMotionSensors(running);
   const { getSnapshot: healthSnap, snapshot: hkData } = useHealthKit(running);
@@ -250,6 +252,7 @@ export default function WalkLoggerScreen() {
     (async () => {
       const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK).catch(() => false);
       setRunning(started); if (started) startForegroundWatch();
+      await FileSystem.makeDirectoryAsync(SESSIONS_DIR, { intermediates: true }).catch(() => {});
       await syncTrailFromFile();
       fetchWeather(ALCOTT_TRAIL.latitude, ALCOTT_TRAIL.longitude);
       fetchPollen(ALCOTT_TRAIL.latitude, ALCOTT_TRAIL.longitude);
@@ -275,6 +278,7 @@ export default function WalkLoggerScreen() {
   const handleStart = async () => { try { const fg = await Location.requestForegroundPermissionsAsync(); if (fg.status !== "granted") { Alert.alert("Permission needed", "Foreground location required."); return; } const bg = await Location.requestBackgroundPermissionsAsync(); if (bg.status !== "granted") { Alert.alert("Permission needed", "Settings > Privacy > Location Services > Walk Logger > Always."); return; } await FileSystem.deleteAsync(LOG_FILE, { idempotent: true }); trailRef.current = []; setTrail([]); setPointCount(0); setElapsed(0); elapsedRef.current = 0; await Location.startLocationUpdatesAsync(LOCATION_TASK, { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0, pausesUpdatesAutomatically: false, showsBackgroundLocationIndicator: true }); await startForegroundWatch(); startAutosave(note, tripType); if (currentPos) { fetchWeather(currentPos.latitude, currentPos.longitude); fetchPollen(currentPos.latitude, currentPos.longitude); weatherPoll.current = setInterval(() => { if (currentPos) { fetchWeather(currentPos.latitude, currentPos.longitude); fetchPollen(currentPos.latitude, currentPos.longitude); } }, 300000); } setRunning(true); } catch(e: any) { Alert.alert("Start failed", String(e)); } };
   const handleStop = async () => { try { await Location.stopLocationUpdatesAsync(LOCATION_TASK); fgWatchRef.current?.remove(); [autosaveRef, weatherPoll].forEach(r => { if (r.current) clearInterval(r.current); }); setRunning(false); await syncTrailFromFile(); } catch(e: any) { Alert.alert("Stop failed", String(e)); } };
   const exportGeoJSON = async (points: GpsPoint[], expNote: string, expType: string, expElapsed: number) => { if (!points.length) { Alert.alert("No data", "Record a walk first."); return; } const geojson = { type: "FeatureCollection", properties: { session: sessionName, points: points.length, duration_sec: expElapsed, exported_at: new Date().toISOString(), source: "towntrip-walk-logger", note: expNote.trim(), trip_type: expType, ble_device: bleState.deviceName, ble_battery: bleState.battery }, features: [{ type: "Feature", geometry: { type: "LineString", coordinates: points.map(p => [p.longitude, p.latitude, p.altitude ?? 0]) }, properties: { session: sessionName, start: points[0]?.iso_time, end: points[points.length-1]?.iso_time, points: points.length } }, ...points.map((p, i) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.longitude, p.latitude, p.altitude ?? 0] }, properties: { i, ...p } }))] }; const outPath = FileSystem.documentDirectory + sessionName + ".geojson"; await FileSystem.writeAsStringAsync(outPath, JSON.stringify(geojson, null, 2)); await Sharing.shareAsync(outPath); await FileSystem.deleteAsync(AUTOSAVE_FILE, { idempotent: true }); };
+  const handleSave = async () => { try { await saveWalk(trail, note, tripType, elapsed, false); } catch(e: any) { Alert.alert("Save failed", String(e)); } };
   const handleExport = async () => { try { await exportGeoJSON(trail, note, tripType, elapsed); } catch(e: any) { Alert.alert("Export failed", String(e)); } };
 
   const fmt = (s: number) => Math.floor(s/60).toString().padStart(2,"0") + ":" + (s%60).toString().padStart(2,"0");
@@ -302,7 +306,7 @@ export default function WalkLoggerScreen() {
   return (
     <View style={st.container}>
       <PollenSurveyModal visible={showSurvey} onClose={() => setShowSurvey(false)} />
-      <MapView ref={mapRef} style={st.map} provider={PROVIDER_DEFAULT} initialRegion={{ latitude: ALCOTT_TRAIL.latitude, longitude: ALCOTT_TRAIL.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }} showsUserLocation showsTraffic showsCompass mapType="hybrid">
+      <MapView ref={mapRef} style={st.map} provider={PROVIDER_DEFAULT} initialRegion={{ latitude: ALCOTT_TRAIL.latitude, longitude: ALCOTT_TRAIL.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }} showsUserLocation showsTraffic showsCompass mapType="satellite">
         {gradeSegments.map((seg, i) => (<Polyline key={`g${i}`} coordinates={seg.coords} strokeColor={seg.color} strokeWidth={8} />))}
         {trailCoords.length > 1 && <Polyline coordinates={trailCoords} strokeColor="#00E5FF" strokeWidth={4} />}
         {currentPos && (<Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}><View style={st.dot} /></Marker>)}
@@ -313,7 +317,8 @@ export default function WalkLoggerScreen() {
         <Text style={st.wi}>{windEmoji(weather?.wind_kph ?? null)} {windStr}{gustStr ? ` ${gustStr}` : ""}</Text>
         {baroStr && <Text style={st.wi}>🔵 {baroStr}hPa</Text>}
         <Text style={st.wi}>{pollenLine}</Text>
-        <Pressable style={st.surveyBtn} onPress={() => setShowSurvey(true)}><Text style={st.surveyBtnT}>🌿</Text></Pressable>
+        <Pressable style={st.iconBtn} onPress={() => setShowSurvey(true)}><Text style={st.iconBtnT}>🌿</Text></Pressable>
+        <Pressable style={st.iconBtn} onPress={() => setShowSessions(true)}><Text style={st.iconBtnT}>🗂</Text></Pressable>
         <View style={st.dots}>{sensorDots.map(({ label, key }) => (<View key={key} style={[st.sdot, { backgroundColor: running && (sensorAvail as any)[key] ? "#00E5FF" : "#2a2a2a" }]}><Text style={st.sdotL}>{label}</Text></View>))}</View>
       </View>
       <Pressable style={st.innerToggle} onPress={() => setShowInner(v => !v)}>
@@ -340,7 +345,8 @@ export default function WalkLoggerScreen() {
       <TextInput style={st.noteInput} placeholder="Session note" placeholderTextColor="#444" value={note} onChangeText={setNote} multiline />
       <View style={st.controls}>
         {!running ? <Pressable style={[st.btn, st.btnStart]} onPress={handleStart}><Text style={st.btnT}>START</Text></Pressable> : <Pressable style={[st.btn, st.btnStop]} onPress={handleStop}><Text style={st.btnT}>STOP</Text></Pressable>}
-        <Pressable style={[st.btn, st.btnExport, trail.length === 0 && st.btnDis]} onPress={handleExport} disabled={trail.length === 0}><Text style={st.btnT}>EXPORT</Text></Pressable>
+        <Pressable style={[st.btn, st.btnSave, trail.length === 0 && st.btnDis]} onPress={handleSave} disabled={trail.length === 0}><Text style={st.btnT}>SAVE</Text></Pressable>
+        <Pressable style={[st.btn, st.btnExport, trail.length === 0 && st.btnDis]} onPress={handleExport} disabled={trail.length === 0}><Text style={st.btnT}>SHARE</Text></Pressable>
       </View>
     </View>
   );
@@ -387,7 +393,8 @@ const st = StyleSheet.create({
   btn: { flex: 1, paddingVertical: 16, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   btnStart: { backgroundColor: "#00C853" },
   btnStop: { backgroundColor: "#D50000" },
-  btnExport: { backgroundColor: "#0288D1" },
+  btnSave: { backgroundColor: "#1A4A2A", borderWidth: 1, borderColor: "#2A7A3A" },
+  btnExport: { backgroundColor: "#0D2A3A", borderWidth: 1, borderColor: "#1A4A6A" },
   btnDis: { opacity: 0.4 },
   btnT: { color: "#fff", fontSize: 15, fontWeight: "700", letterSpacing: 1 },
 });
