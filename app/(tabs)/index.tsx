@@ -189,6 +189,150 @@ function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: ()
   );
 }
 
+
+const TRIP_MODES = ["walk","run","bus","subway","bike","other"];
+const TRIP_LOG_FILE = FileSystem.documentDirectory + "towntrip_trip_log.jsonl";
+
+function TripLogModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [mode, setMode] = useState("walk");
+  const [route, setRoute] = useState("");
+  const [origin, setOrigin] = useState("");
+  const [dest, setDest] = useState("");
+  const [dur, setDur] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [recent, setRecent] = useState<any[]>([]);
+  const [showRecent, setShowRecent] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    (async () => {
+      try {
+        const info = await FileSystem.getInfoAsync(TRIP_LOG_FILE);
+        if (!info.exists) return;
+        const lines = (await FileSystem.readAsStringAsync(TRIP_LOG_FILE)).trim().split("\n").filter(Boolean);
+        setRecent(lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean).reverse().slice(0,20));
+      } catch {}
+    })();
+  }, [visible]);
+  const MC: Record<string,string> = {walk:"#00E5FF",run:"#00C853",bus:"#FFA000",subway:"#9C27B0",bike:"#00BFA5",other:"#616161"};
+  const save = async () => {
+    setSaving(true);
+    const entry = { id: Date.now().toString(), logged_at: new Date().toISOString(), mode, route: route.trim(), origin: origin.trim(), destination: dest.trim(), duration_min: dur ? parseFloat(dur) : null, notes: notes.trim() };
+    try {
+      const info = await FileSystem.getInfoAsync(TRIP_LOG_FILE);
+      const prev = info.exists ? await FileSystem.readAsStringAsync(TRIP_LOG_FILE) : "";
+      await FileSystem.writeAsStringAsync(TRIP_LOG_FILE, prev + JSON.stringify(entry) + "\n");
+      Alert.alert("Saved", mode + " trip logged ✓");
+      setMode("walk"); setRoute(""); setOrigin(""); setDest(""); setDur(""); setNotes("");
+      onClose();
+    } catch(e: any) { Alert.alert("Error", String(e)); }
+    setSaving(false);
+  };
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{flex:1,backgroundColor:"#090909"}}>
+        <View style={{backgroundColor:"#111",paddingTop:20,paddingBottom:12,paddingHorizontal:20,borderBottomWidth:1,borderBottomColor:"#1E1E1E",flexDirection:"row",alignItems:"center"}}>
+          <Text style={{color:"#00E5FF",fontSize:17,fontWeight:"700",flex:1}}>📍 Log Trip</Text>
+          <Pressable onPress={() => setShowRecent(v => !v)} style={{paddingHorizontal:12,paddingVertical:4,backgroundColor:"#1A2A3A",borderRadius:6,marginRight:8}}>
+            <Text style={{color:"#00E5FF",fontSize:12,fontWeight:"600"}}>{showRecent ? "New" : "History"}</Text>
+          </Pressable>
+          <Pressable onPress={onClose}><Text style={{color:"#555",fontSize:18}}>✕</Text></Pressable>
+        </View>
+        {showRecent ? (
+          <ScrollView style={{flex:1}} contentContainerStyle={{paddingBottom:40,paddingHorizontal:20,paddingTop:12}}>
+            {recent.length === 0 && <Text style={{color:"#444",marginTop:40,textAlign:"center"}}>No trips logged yet.</Text>}
+            {recent.map((e,i) => (
+              <View key={i} style={{flexDirection:"row",alignItems:"center",paddingVertical:12,borderBottomWidth:1,borderBottomColor:"#151515"}}>
+                <View style={{paddingHorizontal:8,paddingVertical:3,borderRadius:5,backgroundColor:MC[e.mode]||"#444"}}><Text style={{color:"#000",fontSize:11,fontWeight:"700"}}>{e.mode}</Text></View>
+                <View style={{flex:1,marginLeft:10}}>
+                  <Text style={{color:"#ccc",fontSize:13,fontWeight:"600"}}>{e.route||e.destination||e.origin||"—"}</Text>
+                  <Text style={{color:"#444",fontSize:11,marginTop:2}}>{(e.logged_at||"").slice(0,16).replace("T"," ")}{e.duration_min?" · "+e.duration_min+"min":""}</Text>
+                  {e.notes ? <Text style={{color:"#555",fontSize:11,fontStyle:"italic"}} numberOfLines={1}>{e.notes}</Text> : null}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <ScrollView style={{flex:1}} contentContainerStyle={{paddingBottom:40,paddingHorizontal:20,paddingTop:12}}>
+            <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginTop:14,marginBottom:8}}>MODE</Text>
+            <View style={{flexDirection:"row",flexWrap:"wrap",gap:8,marginBottom:14}}>
+              {TRIP_MODES.map(m => (
+                <Pressable key={m} onPress={() => setMode(m)} style={{paddingHorizontal:14,paddingVertical:8,borderRadius:8,borderWidth:1,borderColor:mode===m?(MC[m]||"#00E5FF"):"#222",backgroundColor:mode===m?(MC[m]+"22"):"transparent"}}>
+                  <Text style={{color:mode===m?(MC[m]||"#00E5FF"):"#555",fontSize:12,fontWeight:"600"}}>{m}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>ROUTE / LINE</Text>
+            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="Bx12, 6 train, Walk to park..." placeholderTextColor="#333" value={route} onChangeText={setRoute} />
+            <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>FROM → TO</Text>
+            <View style={{flexDirection:"row",gap:8,marginBottom:14}}>
+              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Origin" placeholderTextColor="#333" value={origin} onChangeText={setOrigin} />
+              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Destination" placeholderTextColor="#333" value={dest} onChangeText={setDest} />
+            </View>
+            <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>DURATION (min)</Text>
+            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="23" placeholderTextColor="#333" value={dur} onChangeText={setDur} keyboardType="numeric" />
+            <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>NOTES</Text>
+            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:20,minHeight:70}} placeholder="Crowded, fast, knees hurt..." placeholderTextColor="#333" value={notes} onChangeText={setNotes} multiline />
+            <Pressable style={{backgroundColor:"#003A5C",borderRadius:11,paddingVertical:15,alignItems:"center",borderWidth:1,borderColor:"#00517A",opacity:saving?0.4:1}} onPress={save} disabled={saving}>
+              <Text style={{color:"#00E5FF",fontSize:14,fontWeight:"800",letterSpacing:1}}>{saving?"Saving...":"LOG TRIP"}</Text>
+            </Pressable>
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+function SessionsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!visible) return;
+    (async () => {
+      setLoading(true);
+      try {
+        await FileSystem.makeDirectoryAsync(SESSIONS_DIR, { intermediates: true }).catch(() => {});
+        const files = (await FileSystem.readDirectoryAsync(SESSIONS_DIR).catch(() => [] as string[])).filter(f => f.endsWith(".geojson") && !f.startsWith("._")).sort().reverse();
+        const loaded: any[] = [];
+        for (const f of files.slice(0,30)) {
+          try {
+            const raw = await FileSystem.readAsStringAsync(SESSIONS_DIR + f);
+            const data = JSON.parse(raw);
+            const props = data.properties || {};
+            loaded.push({ name: f.replace(".geojson",""), path: SESSIONS_DIR+f, pts: props.points||0, date: (props.exported_at||"").slice(0,10), note: props.note||"" });
+          } catch {}
+        }
+        setSessions(loaded);
+      } catch {}
+      setLoading(false);
+    })();
+  }, [visible]);
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{flex:1,backgroundColor:"#0A0A0A"}}>
+        <View style={{backgroundColor:"#111",paddingTop:20,paddingBottom:12,paddingHorizontal:20,borderBottomWidth:1,borderBottomColor:"#1E1E1E",flexDirection:"row",alignItems:"center"}}>
+          <Text style={{color:"#00E5FF",fontSize:17,fontWeight:"700",flex:1}}>🗂 Saved Walks</Text>
+          <Pressable onPress={onClose}><Text style={{color:"#555",fontSize:18}}>✕</Text></Pressable>
+        </View>
+        <ScrollView style={{flex:1}} contentContainerStyle={{paddingBottom:40}}>
+          {loading && <Text style={{color:"#333",textAlign:"center",marginTop:60}}>Loading...</Text>}
+          {!loading && sessions.length===0 && <Text style={{color:"#333",fontSize:14,textAlign:"center",marginTop:60,lineHeight:24}}>{"No saved walks yet.\nFinish a walk and tap SAVE."}</Text>}
+          {sessions.map((s,i) => (
+            <Pressable key={i} onPress={() => Sharing.shareAsync(s.path).catch(()=>{})} style={{flexDirection:"row",alignItems:"center",paddingHorizontal:20,paddingVertical:14,borderBottomWidth:1,borderBottomColor:"#151515"}}>
+              <View style={{flex:1}}>
+                <Text style={{color:"#ccc",fontSize:13}}>{s.name}</Text>
+                <Text style={{color:"#444",fontSize:11,marginTop:3}}>{s.pts} pts{s.date?" · "+s.date:""}</Text>
+                {s.note?<Text style={{color:"#555",fontSize:11,marginTop:2,fontStyle:"italic"}} numberOfLines={1}>{s.note}</Text>:null}
+              </View>
+              <Text style={{color:"#00E5FF",fontSize:20,marginLeft:12}}>↑</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 export default function WalkLoggerScreen() {
   useKeepAwake();
   const mapRef = useRef<MapView>(null);
@@ -204,6 +348,7 @@ export default function WalkLoggerScreen() {
   const [showInner, setShowInner] = useState(false);
   const [showSurvey, setShowSurvey] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
+  const [showTripLog, setShowTripLog] = useState(false);
   const [sessionName] = useState("walk_" + new Date().toISOString().slice(0,16).replace("T","_").replace(":","h"));
   const { snapshot: motionSnapshot, available: sensorAvail } = useMotionSensors(running);
   const { getSnapshot: healthSnap, snapshot: hkData } = useHealthKit(running);
@@ -309,6 +454,8 @@ export default function WalkLoggerScreen() {
   return (
     <View style={st.container}>
       <PollenSurveyModal visible={showSurvey} onClose={() => setShowSurvey(false)} />
+      <TripLogModal visible={showTripLog} onClose={() => setShowTripLog(false)} />
+      <SessionsModal visible={showSessions} onClose={() => setShowSessions(false)} />
       <MapView ref={mapRef} style={st.map} provider={PROVIDER_DEFAULT} initialRegion={{ latitude: ALCOTT_TRAIL.latitude, longitude: ALCOTT_TRAIL.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }} showsUserLocation showsTraffic showsCompass mapType="satellite">
         {gradeSegments.map((seg, i) => (<Polyline key={`g${i}`} coordinates={seg.coords} strokeColor={seg.color} strokeWidth={8} />))}
         {trailCoords.length > 1 && <Polyline coordinates={trailCoords} strokeColor="#00E5FF" strokeWidth={4} />}
@@ -321,6 +468,8 @@ export default function WalkLoggerScreen() {
         {baroStr && <Text style={st.wi}>🔵 {baroStr}hPa</Text>}
         <Text style={st.wi}>{pollenLine}</Text>
         <Pressable style={st.iconBtn} onPress={() => setShowSurvey(true)}><Text style={st.iconBtnT}>🌿</Text></Pressable>
+        <Pressable style={st.iconBtn} onPress={() => setShowTripLog(true)}><Text style={st.iconBtnT}>📍</Text></Pressable>
+        <Pressable style={st.iconBtn} onPress={() => setShowSessions(true)}><Text style={st.iconBtnT}>🗂</Text></Pressable>
         <Pressable style={st.iconBtn} onPress={() => setShowSessions(true)}><Text style={st.iconBtnT}>🗂</Text></Pressable>
         <View style={st.dots}>{sensorDots.map(({ label, key }) => (<View key={key} style={[st.sdot, { backgroundColor: running && (sensorAvail as any)[key] ? "#00E5FF" : "#2a2a2a" }]}><Text style={st.sdotL}>{label}</Text></View>))}</View>
       </View>
