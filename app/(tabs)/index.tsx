@@ -8,6 +8,7 @@ import { useKeepAwake } from "expo-keep-awake";
 import MapView, { Polyline, Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import { useMotionSensors } from "../../hooks/useMotionSensors";
 import { useHealthKit } from "../../hooks/useHealthKit";
+import { useHealthSync } from "../../hooks/useHealthSync";
 import { useBLE } from "../../hooks/useBLE";
 
 const LOCATION_TASK = "towntrip-background-location";
@@ -206,6 +207,7 @@ export default function WalkLoggerScreen() {
   const [sessionName] = useState("walk_" + new Date().toISOString().slice(0,16).replace("T","_").replace(":","h"));
   const { snapshot: motionSnapshot, available: sensorAvail } = useMotionSensors(running);
   const { getSnapshot: healthSnap, snapshot: hkData } = useHealthKit(running);
+  const { sync: syncHealth, status: syncStatus } = useHealthSync();
   const { state: bleState, rescan: bleRescan } = useBLE(running);
   const fgWatchRef = useRef<Location.LocationSubscription|null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>|null>(null);
@@ -255,6 +257,7 @@ export default function WalkLoggerScreen() {
       await FileSystem.makeDirectoryAsync(SESSIONS_DIR, { intermediates: true }).catch(() => {});
       await syncTrailFromFile();
       fetchWeather(ALCOTT_TRAIL.latitude, ALCOTT_TRAIL.longitude);
+      syncHealth(30);
       fetchPollen(ALCOTT_TRAIL.latitude, ALCOTT_TRAIL.longitude);
     })();
     return () => cleanup();
@@ -340,6 +343,8 @@ export default function WalkLoggerScreen() {
         <Text style={st.sessionText} numberOfLines={1}>{sessionName}</Text>
         <Text style={st.tripLabel}>{tripType}</Text>
         <Text style={st.ptCount}>{pointCount} pts</Text>
+        {syncStatus.running && <Text style={{color:"#FFA000",fontSize:9,marginLeft:4}}>↑HK</Text>}
+        {syncStatus.lastSync && !syncStatus.running && <Text style={{color:"#00C853",fontSize:9,marginLeft:4}}>✓HK</Text>}
       </View>
       {!running && (<View style={st.tripRow}>{TRIP_TYPES.map(t => (<Pressable key={t} style={[st.tripBtn, tripType === t && st.tripBtnA]} onPress={() => setTripType(t)}><Text style={[st.tripBtnT, tripType === t && st.tripBtnTA]}>{t}</Text></Pressable>))}</View>)}
       <TextInput style={st.noteInput} placeholder="Session note" placeholderTextColor="#444" value={note} onChangeText={setNote} multiline />
