@@ -21,7 +21,9 @@
           "location",
           "fetch"
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSHealthShareUsageDescription": "TownTrip reads heart rate, weight, HRV, SpO2, steps, and workouts to power your personal health and transit intelligence dashboard.",
+        "NSHealthUpdateUsageDescription": "TownTrip may write workout sessions to Apple Health."
       }
     },
     "android": {
@@ -57,7 +59,15 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "react-native-ble-plx"
+      "react-native-ble-plx",
+      [
+        "expo-health",
+        {
+          "healthSharePermission": "TownTrip reads your health data including heart rate, weight, HRV, SpO2, steps, and workout routes to sync with your personal health intelligence dashboard.",
+          "healthUpdatePermission": "TownTrip may write workout data to Apple Health.",
+          "isCameraEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
