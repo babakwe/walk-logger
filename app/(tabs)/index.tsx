@@ -33,10 +33,10 @@ function spo2Emoji(pct: number | null): string { if (pct === null) return "🩸"
 
 function gradeColor(slope: number): string {
   const abs = Math.abs(slope);
-  if (abs < 0.03) return "transparent";
-  if (abs < 0.08) return "#FFD600";
-  if (abs < 0.15) return "#FF6D00";
-  return "#D50000";
+  if (abs < 0.03) return "transparent";   // flat — road shows through
+  if (abs < 0.06) return "#FFD600";       // gentle slope — yellow
+  if (abs < 0.10) return "#FF6D00";       // moderate — orange
+  return "#D50000";                        // steep — red
 }
 function calcGrade(p1: GpsPoint, p2: GpsPoint): number {
   const dx = haversineM(p1.latitude, p1.longitude, p2.latitude, p2.longitude);
@@ -464,8 +464,8 @@ export default function WalkLoggerScreen() {
       <TripLogModal visible={showTripLog} onClose={() => setShowTripLog(false)} />
       <SessionsModal visible={showSessions} onClose={() => setShowSessions(false)} />
       <MapView ref={mapRef} style={st.map} provider={PROVIDER_DEFAULT} initialRegion={{ latitude: ALCOTT_TRAIL.latitude, longitude: ALCOTT_TRAIL.longitude, latitudeDelta: 0.004, longitudeDelta: 0.004 }} showsUserLocation showsTraffic showsCompass mapType="satellite">
-        {gradeSegments.map((seg, i) => (<Polyline key={`g${i}`} coordinates={seg.coords} strokeColor={seg.color} strokeWidth={8} />))}
-        {trailCoords.length > 1 && <Polyline coordinates={trailCoords} strokeColor="#00E5FF" strokeWidth={4} />}
+        {gradeSegments.map((seg, i) => (<Polyline key={`g${i}`} coordinates={seg.coords} strokeColor={seg.color} strokeWidth={3} />))}
+        {trailCoords.length > 1 && <Polyline coordinates={trailCoords} strokeColor="rgba(0,229,255,0.7)" strokeWidth={4} />}
         {currentPos && (<Marker coordinate={{ latitude: currentPos.latitude, longitude: currentPos.longitude }} anchor={{ x: 0.5, y: 0.5 }}><View style={st.dot} /></Marker>)}
       </MapView>
       <View style={st.outerBar}>
