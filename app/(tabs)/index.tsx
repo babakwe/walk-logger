@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { Alert, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableWithoutFeedback, View } from "react-native";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -179,7 +179,7 @@ function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: ()
           <SevRow label="Overall severity (0-5)" val={overall} setVal={setOverall} />
           <Toggle label="Went outside today" val={wentOut} setVal={setWentOut} />
           <Text style={sv.section}>📝 NOTES</Text>
-          <TextInput style={sv.notes} placeholder="Any extra detail..." placeholderTextColor="#555" value={notes} onChangeText={setNotes} multiline numberOfLines={3} />
+          <TextInput style={sv.notes} placeholder="Any extra detail..." placeholderTextColor="#555" value={notes} onChangeText={setNotes} multiline blurOnSubmit returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} numberOfLines={3} />
           <Pressable style={[sv.saveBtn, saving && sv.saveBtnDis]} onPress={save} disabled={saving}>
             <Text style={sv.saveBtnT}>{saving ? "Saving..." : "SAVE TODAY"}</Text>
           </Pressable>
@@ -263,14 +263,14 @@ function TripLogModal({ visible, onClose }: { visible: boolean; onClose: () => v
               ))}
             </View>
             <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>ROUTE / LINE</Text>
-            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="Bx12, 6 train, Walk to park..." placeholderTextColor="#333" value={route} onChangeText={setRoute} />
+            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="Bx12, 6 train, Walk to park..." placeholderTextColor="#333" value={route} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} onChangeText={setRoute} />
             <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>FROM → TO</Text>
             <View style={{flexDirection:"row",gap:8,marginBottom:14}}>
-              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Origin" placeholderTextColor="#333" value={origin} onChangeText={setOrigin} />
-              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Destination" placeholderTextColor="#333" value={dest} onChangeText={setDest} />
+              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Origin" placeholderTextColor="#333" value={origin} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} onChangeText={setOrigin} />
+              <TextInput style={{flex:1,backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E"}} placeholder="Destination" placeholderTextColor="#333" value={dest} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} onChangeText={setDest} />
             </View>
             <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>DURATION (min)</Text>
-            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="23" placeholderTextColor="#333" value={dur} onChangeText={setDur} keyboardType="numeric" />
+            <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:14}} placeholder="23" placeholderTextColor="#333" value={dur} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} onChangeText={setDur} keyboardType="numeric" />
             <Text style={{color:"#446688",fontSize:11,fontWeight:"700",letterSpacing:1,marginBottom:6}}>NOTES</Text>
             <TextInput style={{backgroundColor:"#111",color:"#ccc",fontSize:14,padding:12,borderRadius:8,borderWidth:1,borderColor:"#1E1E1E",marginBottom:20,minHeight:70}} placeholder="Crowded, fast, knees hurt..." placeholderTextColor="#333" value={notes} onChangeText={setNotes} multiline />
             <Pressable style={{backgroundColor:"#003A5C",borderRadius:11,paddingVertical:15,alignItems:"center",borderWidth:1,borderColor:"#00517A",opacity:saving?0.4:1}} onPress={save} disabled={saving}>
@@ -426,7 +426,13 @@ export default function WalkLoggerScreen() {
   const handleStart = async () => { try { const fg = await Location.requestForegroundPermissionsAsync(); if (fg.status !== "granted") { Alert.alert("Permission needed", "Foreground location required."); return; } const bg = await Location.requestBackgroundPermissionsAsync(); if (bg.status !== "granted") { Alert.alert("Permission needed", "Settings > Privacy > Location Services > Walk Logger > Always."); return; } await FileSystem.deleteAsync(LOG_FILE, { idempotent: true }); trailRef.current = []; setTrail([]); setPointCount(0); setElapsed(0); elapsedRef.current = 0; await Location.startLocationUpdatesAsync(LOCATION_TASK, { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0, pausesUpdatesAutomatically: false, showsBackgroundLocationIndicator: true }); await startForegroundWatch(); startAutosave(note, tripType); if (currentPos) { fetchWeather(currentPos.latitude, currentPos.longitude); fetchPollen(currentPos.latitude, currentPos.longitude); weatherPoll.current = setInterval(() => { if (currentPos) { fetchWeather(currentPos.latitude, currentPos.longitude); fetchPollen(currentPos.latitude, currentPos.longitude); } }, 300000); } setRunning(true); } catch(e: any) { Alert.alert("Start failed", String(e)); } };
   const handleStop = async () => { try { await Location.stopLocationUpdatesAsync(LOCATION_TASK); fgWatchRef.current?.remove(); [autosaveRef, weatherPoll].forEach(r => { if (r.current) clearInterval(r.current); }); setRunning(false); await syncTrailFromFile(); } catch(e: any) { Alert.alert("Stop failed", String(e)); } };
   const exportGeoJSON = async (points: GpsPoint[], expNote: string, expType: string, expElapsed: number) => { if (!points.length) { Alert.alert("No data", "Record a walk first."); return; } const geojson = { type: "FeatureCollection", properties: { session: sessionName, points: points.length, duration_sec: expElapsed, exported_at: new Date().toISOString(), source: "towntrip-walk-logger", note: expNote.trim(), trip_type: expType, ble_device: bleState.deviceName, ble_battery: bleState.battery }, features: [{ type: "Feature", geometry: { type: "LineString", coordinates: points.map(p => [p.longitude, p.latitude, p.altitude ?? 0]) }, properties: { session: sessionName, start: points[0]?.iso_time, end: points[points.length-1]?.iso_time, points: points.length } }, ...points.map((p, i) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.longitude, p.latitude, p.altitude ?? 0] }, properties: { i, ...p } }))] }; const outPath = FileSystem.documentDirectory + sessionName + ".geojson"; await FileSystem.writeAsStringAsync(outPath, JSON.stringify(geojson, null, 2)); await Sharing.shareAsync(outPath); await FileSystem.deleteAsync(AUTOSAVE_FILE, { idempotent: true }); };
-  const handleSave = async () => { try { await saveWalk(trail, note, tripType, elapsed, false); } catch(e: any) { Alert.alert("Save failed", String(e)); } };
+  const handleSave = async () => {
+    try {
+      await FileSystem.makeDirectoryAsync(SESSIONS_DIR, { intermediates: true }).catch(() => {});
+      await saveWalk(trail, note, tripType, elapsed, false);
+      Alert.alert("Saved ✓", "Walk stored on your phone. Tap 🗂 to view.");
+    } catch(e: any) { Alert.alert("Save failed", String(e)); }
+  };
   const handleExport = async () => { try { await exportGeoJSON(trail, note, tripType, elapsed); } catch(e: any) { Alert.alert("Export failed", String(e)); } };
 
   const fmt = (s: number) => Math.floor(s/60).toString().padStart(2,"0") + ":" + (s%60).toString().padStart(2,"0");
@@ -452,6 +458,7 @@ export default function WalkLoggerScreen() {
   }
 
   return (
+    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()} accessible={false}>
     <View style={st.container}>
       <PollenSurveyModal visible={showSurvey} onClose={() => setShowSurvey(false)} />
       <TripLogModal visible={showTripLog} onClose={() => setShowTripLog(false)} />
@@ -496,7 +503,7 @@ export default function WalkLoggerScreen() {
         {syncStatus.lastSync && !syncStatus.running && <Text style={{color:"#00C853",fontSize:9,marginLeft:4}}>✓HK</Text>}
       </View>
       {!running && (<View style={st.tripRow}>{TRIP_TYPES.map(t => (<Pressable key={t} style={[st.tripBtn, tripType === t && st.tripBtnA]} onPress={() => setTripType(t)}><Text style={[st.tripBtnT, tripType === t && st.tripBtnTA]}>{t}</Text></Pressable>))}</View>)}
-      <TextInput style={st.noteInput} placeholder="Session note" placeholderTextColor="#444" value={note} onChangeText={setNote} multiline />
+      <TextInput style={st.noteInput} placeholder="Session note" placeholderTextColor="#444" value={note} onChangeText={setNote} returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} blurOnSubmit multiline />
       <View style={st.controls}>
         {!running ? <Pressable style={[st.btn, st.btnStart]} onPress={handleStart}><Text style={st.btnT}>START</Text></Pressable> : <Pressable style={[st.btn, st.btnStop]} onPress={handleStop}><Text style={st.btnT}>STOP</Text></Pressable>}
         <Pressable style={[st.btn, st.btnSave, trail.length === 0 && st.btnDis]} onPress={handleSave} disabled={trail.length === 0}><Text style={st.btnT}>SAVE</Text></Pressable>
