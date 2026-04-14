@@ -79,27 +79,52 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }: any) => {
 function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const today = new Date().toISOString().slice(0, 10);
   const [saving, setSaving] = useState(false);
-  const [todayPollen, setTodayPollen] = useState<{tree_upi?: number|null; fordham?: number|null} | null>(null);
+  const [pollenBar, setPollenBar] = useState<{level:number;label:string;color:string;tree:number|null;grass:number|null;weed:number|null;wind:number|null}|null>(null);
+  // Eyes
   const [eyesSev, setEyesSev] = useState(0);
   const [eyesItchy, setEyesItchy] = useState(false);
   const [eyesWatery, setEyesWatery] = useState(false);
   const [eyesStrings, setEyesStrings] = useState(false);
   const [eyesTaps, setEyesTaps] = useState(0);
+  // Nose
   const [noseSev, setNoseSev] = useState(0);
   const [noseRunny, setNoseRunny] = useState(false);
   const [noseStuffy, setNoseStuffy] = useState(false);
   const [noseSneezing, setNoseSneezing] = useState(false);
   const [sneezingBouts, setSneezingBouts] = useState(0);
+  // Other symptoms
   const [earItch, setEarItch] = useState(false);
   const [earSound, setEarSound] = useState(false);
   const [lungsT, setLungsT] = useState(false);
   const [lungsC, setLungsC] = useState(false);
+  const [headache, setHeadache] = useState(false);
+  const [sleepAffected, setSleepAffected] = useState(false);
+  // Context
   const [overall, setOverall] = useState(0);
   const [wentOut, setWentOut] = useState(true);
+  const [outdoorMins, setOutdoorMins] = useState("");
+  const [activityLevel, setActivityLevel] = useState<"sitting"|"walking"|"running">("walking");
+  const [windowsClosed, setWindowsClosed] = useState(false);
+  const [filterRunning, setFilterRunning] = useState(false);
   const [notes, setNotes] = useState("");
+
+  // ── Calibrated pollen bar (your personal thresholds) ─────────────────────
+  // Tree: trigger at 33 g/m3, severe at 70+
+  // Grass/Weed: unknown thresholds — shown but don't drive color yet
+  const calcPollenBar = (tree: number|null, grass: number|null, weed: number|null, wind: number|null) => {
+    const t = tree ?? 0;
+    const windMod = (wind ?? 0) > 20 ? 15 : 0; // wind amplifies exposure
+    const effective = t + windMod;
+    if (effective < 20) return { level: 0, label: "Clear", color: "#2E7D32", tree, grass, weed, wind };
+    if (effective < 33) return { level: 1, label: "Approaching", color: "#558B2F", tree, grass, weed, wind };
+    if (effective < 55) return { level: 2, label: "At threshold", color: "#F9A825", tree, grass, weed, wind };
+    if (effective < 75) return { level: 3, label: "Above threshold", color: "#EF6C00", tree, grass, weed, wind };
+    return { level: 4, label: "High exposure", color: "#C62828", tree, grass, weed, wind };
+  };
 
   useEffect(() => {
     if (!visible) return;
+    // Load today's existing entry
     fetch(`${SB_URL}/rest/v1/pollen_symptom_log?date=eq.${today}&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } })
       .then(r => r.json()).then(rows => {
         if (rows?.length) {
@@ -110,88 +135,232 @@ function PollenSurveyModal({ visible, onClose }: { visible: boolean; onClose: ()
           setNoseSneezing(!!r.nose_sneezing); setSneezingBouts(r.sneezing_bouts ?? 0);
           setEarItch(!!r.inner_ear_itch); setEarSound(!!r.ear_sound_made);
           setLungsT(!!r.lungs_tight); setLungsC(!!r.lungs_coughing);
-          setOverall(r.overall_severity ?? 0); setWentOut(r.went_outside !== false); setNotes(r.notes ?? "");
+          setHeadache(!!r.headache); setSleepAffected(!!r.sleep_affected);
+          setOverall(r.overall_severity ?? 0); setWentOut(r.went_outside !== false);
+          setOutdoorMins(r.outdoor_minutes ? String(r.outdoor_minutes) : "");
+          setActivityLevel(r.activity_level ?? "walking");
+          setWindowsClosed(!!r.windows_closed); setFilterRunning(!!r.filter_running);
+          setNotes(r.notes ?? "");
         } else {
           setEyesSev(0); setEyesItchy(false); setEyesWatery(false); setEyesStrings(false); setEyesTaps(0);
           setNoseSev(0); setNoseRunny(false); setNoseStuffy(false); setNoseSneezing(false); setSneezingBouts(0);
           setEarItch(false); setEarSound(false); setLungsT(false); setLungsC(false);
-          setOverall(0); setWentOut(true); setNotes("");
+          setHeadache(false); setSleepAffected(false);
+          setOverall(0); setWentOut(true); setOutdoorMins(""); setActivityLevel("walking");
+          setWindowsClosed(false); setFilterRunning(false); setNotes("");
         }
       }).catch(() => {});
+    // Load pollen forecast for bar
     Promise.all([
-      fetch(`${SB_URL}/rest/v1/pollen_history?date=eq.${today}&location_name=eq.bronx_10475&source=eq.google_pollen&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } }).then(r => r.json()),
-      fetch(`${SB_URL}/rest/v1/pollen_history?date=eq.${today}&location_name=eq.lincoln_center_nyc&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } }).then(r => r.json()),
-    ]).then(([goog, ford]) => setTodayPollen({ tree_upi: goog?.[0]?.tree_upi ?? null, fordham: ford?.[0]?.tree_grains_m3 ?? null })).catch(() => {});
+      fetch(`${SB_URL}/rest/v1/pollen_history?date=eq.${today}&location_name=eq.bronx_10475&source=eq.google_pollen_api&select=tree_upi,grass_upi,weed_upi&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } }).then(r => r.json()),
+      fetch(`${SB_URL}/rest/v1/pollen_history?date=eq.${today}&location_name=eq.lincoln_center_nyc&source=eq.fordham_calder&select=tree_grains_m3,grass_grains_m3,weed_grains_m3&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } }).then(r => r.json()),
+      fetch(`${SB_URL}/rest/v1/pollen_history?date=eq.${today}&select=wind_kph&limit=1`, { headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON } }).then(r => r.json()),
+    ]).then(([g, f, w]) => {
+      const tree = f?.[0]?.tree_grains_m3 ? parseFloat(f[0].tree_grains_m3) : (g?.[0]?.tree_upi ? g[0].tree_upi * 20 : null);
+      const grass = f?.[0]?.grass_grains_m3 ? parseFloat(f[0].grass_grains_m3) : null;
+      const weed = f?.[0]?.weed_grains_m3 ? parseFloat(f[0].weed_grains_m3) : null;
+      const wind = w?.[0]?.wind_kph ?? null;
+      setPollenBar(calcPollenBar(tree, grass, weed, wind));
+    }).catch(() => {});
   }, [visible]);
 
   const save = async () => {
     setSaving(true);
-    const row = { date: today, eyes_severity: eyesSev, eyes_itchy: eyesItchy, eyes_watery: eyesWatery, eyes_strings: eyesStrings, eyes_tap_cleans: eyesTaps, nose_severity: noseSev, nose_runny: noseRunny, nose_stuffy: noseStuffy, nose_sneezing: noseSneezing, sneezing_bouts: sneezingBouts, inner_ear_itch: earItch, ear_sound_made: earSound, lungs_tight: lungsT, lungs_coughing: lungsC, overall_severity: overall, went_outside: wentOut, notes, google_tree_upi: todayPollen?.tree_upi ?? null, fordham_grains_m3: todayPollen?.fordham ?? null, pollen_com_score: null };
+    const row = {
+      date: today, logged_at: new Date().toISOString(), log_index: Date.now(),
+      eyes_severity: eyesSev, eyes_itchy: eyesItchy, eyes_watery: eyesWatery,
+      eyes_strings: eyesStrings, eyes_tap_cleans: eyesTaps,
+      nose_severity: noseSev, nose_runny: noseRunny, nose_stuffy: noseStuffy,
+      nose_sneezing: noseSneezing, sneezing_bouts: sneezingBouts,
+      inner_ear_itch: earItch, ear_sound_made: earSound,
+      lungs_tight: lungsT, lungs_coughing: lungsC,
+      headache, sleep_affected: sleepAffected,
+      overall_severity: overall, went_outside: wentOut,
+      outdoor_minutes: outdoorMins ? parseInt(outdoorMins) : null,
+      activity_level: wentOut ? activityLevel : null,
+      windows_closed: windowsClosed, filter_running: filterRunning,
+      notes: notes.trim(),
+    };
     try {
-      await fetch(`${SB_URL}/rest/v1/pollen_symptom_log`, { method: "POST", headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) });
-      Alert.alert("Saved", "Today's symptoms logged ✓"); onClose();
-    } catch { Alert.alert("Error", "Could not save."); }
+      const res = await fetch(`${SB_URL}/rest/v1/pollen_symptom_log`, {
+        method: "POST",
+        headers: { apikey: SB_ANON, Authorization: "Bearer " + SB_ANON, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify(row)
+      });
+      if (res.ok) { Alert.alert("Saved ✓", "Pollen log saved."); onClose(); }
+      else { const e = await res.text(); Alert.alert("Save failed", e.slice(0,100)); }
+    } catch(e: any) { Alert.alert("Save failed", String(e)); }
     setSaving(false);
   };
 
-  const SevRow = ({ label, val, setVal }: { label: string; val: number; setVal: (n: number) => void }) => (
-    <View style={sv.sevRow}>
-      <Text style={sv.sevLabel}>{label}</Text>
-      <View style={sv.sevBtns}>{[0,1,2,3,4,5].map(n => (<Pressable key={n} style={[sv.sevBtn, val === n && sv.sevBtnA]} onPress={() => setVal(n)}><Text style={[sv.sevBtnT, val === n && sv.sevBtnTA]}>{n}</Text></Pressable>))}</View>
+  const Sev = ({ val, set, label }: { val: number; set: (n: number) => void; label: string }) => (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={ps.fieldLabel}>{label}</Text>
+      <View style={{ flexDirection: "row", gap: 6 }}>
+        {[0,1,2,3,4,5].map(n => (
+          <Pressable key={n} onPress={() => set(n)}
+            style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center",
+              backgroundColor: val === n ? (n === 0 ? "#1B5E20" : n <= 2 ? "#F9A825" : "#B71C1C") : "#1A1A1A",
+              borderWidth: 1, borderColor: val === n ? "transparent" : "#2A2A2A" }}>
+            <Text style={{ color: val === n ? "#FFF" : "#555", fontSize: 13, fontWeight: "600" }}>{n}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
-  const Toggle = ({ label, val, setVal }: { label: string; val: boolean; setVal: (b: boolean) => void }) => (
-    <View style={sv.toggleRow}><Text style={sv.toggleLabel}>{label}</Text><Switch value={val} onValueChange={setVal} trackColor={{ false: "#333", true: "#00E5FF" }} thumbColor={val ? "#fff" : "#666"} /></View>
+
+  const Toggle = ({ val, set, label }: { val: boolean; set: (b: boolean) => void; label: string }) => (
+    <Pressable onPress={() => set(!val)} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 8, gap: 10 }}>
+      <View style={{ width: 22, height: 22, borderRadius: 4, borderWidth: 1.5,
+        borderColor: val ? "#00E5FF" : "#2A2A2A", backgroundColor: val ? "#003A5C" : "transparent",
+        alignItems: "center", justifyContent: "center" }}>
+        {val && <Text style={{ color: "#00E5FF", fontSize: 13, fontWeight: "700" }}>✓</Text>}
+      </View>
+      <Text style={{ color: val ? "#ccc" : "#555", fontSize: 13 }}>{label}</Text>
+    </Pressable>
   );
-  const Counter = ({ label, val, setVal }: { label: string; val: number; setVal: (n: number) => void }) => (
-    <View style={sv.ctrRow}><Text style={sv.ctrLabel}>{label}</Text><View style={sv.ctrBtns}><Pressable style={sv.ctrBtn} onPress={() => setVal(Math.max(0, val-1))}><Text style={sv.ctrBtnT}>−</Text></Pressable><Text style={sv.ctrVal}>{val}</Text><Pressable style={sv.ctrBtn} onPress={() => setVal(val+1)}><Text style={sv.ctrBtnT}>+</Text></Pressable></View></View>
-  );
+
+  const barPct = pollenBar ? Math.min(100, (pollenBar.level / 4) * 100) : 0;
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={sv.container}>
-        <View style={sv.header}>
-          <Text style={sv.title}>🌿 Pollen Symptom Log</Text>
-          <Text style={sv.date}>{today}</Text>
-          {todayPollen && <Text style={sv.pollenInfo}>{todayPollen.tree_upi != null ? `Google Tree UPI: ${todayPollen.tree_upi}/5  ` : ""}{todayPollen.fordham != null ? `Fordham: ${todayPollen.fordham} g/m³` : ""}</Text>}
-          <Pressable style={sv.closeBtn} onPress={onClose}><Text style={sv.closeBtnT}>✕</Text></Pressable>
+      <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()} accessible={false}>
+      <View style={{ flex: 1, backgroundColor: "#090909" }}>
+        <View style={{ backgroundColor: "#111", paddingTop: 20, paddingBottom: 12, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: "#1E1E1E", flexDirection: "row", alignItems: "center" }}>
+          <Text style={{ color: "#00E5FF", fontSize: 17, fontWeight: "700", flex: 1 }}>🌿 Pollen Log</Text>
+          <Text style={{ color: "#333", fontSize: 12, marginRight: 12 }}>{today}</Text>
+          <Pressable onPress={onClose}><Text style={{ color: "#444", fontSize: 18 }}>✕</Text></Pressable>
         </View>
-        <ScrollView style={sv.scroll} contentContainerStyle={{ paddingBottom: 40 }}>
-          <Text style={sv.section}>👁 EYES</Text>
-          <SevRow label="Severity (0-5)" val={eyesSev} setVal={setEyesSev} />
-          <Toggle label="Itchy" val={eyesItchy} setVal={setEyesItchy} />
-          <Toggle label="Watery" val={eyesWatery} setVal={setEyesWatery} />
-          <Toggle label="Strings / mucus" val={eyesStrings} setVal={setEyesStrings} />
-          <Counter label="Tap cleans (sink)" val={eyesTaps} setVal={setEyesTaps} />
-          <Text style={sv.section}>👃 NOSE</Text>
-          <SevRow label="Severity (0-5)" val={noseSev} setVal={setNoseSev} />
-          <Toggle label="Runny" val={noseRunny} setVal={setNoseRunny} />
-          <Toggle label="Stuffy / blocked" val={noseStuffy} setVal={setNoseStuffy} />
-          <Toggle label="Sneezing" val={noseSneezing} setVal={setNoseSneezing} />
-          <Counter label="Sneezing bouts" val={sneezingBouts} setVal={setSneezingBouts} />
-          <Text style={sv.section}>👂 EARS</Text>
-          <Toggle label="Inner ear itch" val={earItch} setVal={setEarItch} />
-          <Toggle label="Made the sound to relieve" val={earSound} setVal={setEarSound} />
-          <Text style={sv.section}>🫁 LUNGS</Text>
-          <Toggle label="Tight / pressure" val={lungsT} setVal={setLungsT} />
-          <Toggle label="Coughing" val={lungsC} setVal={setLungsC} />
-          <Text style={sv.section}>📊 OVERALL</Text>
-          <SevRow label="Overall severity (0-5)" val={overall} setVal={setOverall} />
-          <Toggle label="Went outside today" val={wentOut} setVal={setWentOut} />
-          <Text style={sv.section}>📝 NOTES</Text>
-          <TextInput style={sv.notes} placeholder="Any extra detail..." placeholderTextColor="#555" value={notes} onChangeText={setNotes} multiline blurOnSubmit returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} numberOfLines={3} />
-          <Pressable style={[sv.saveBtn, saving && sv.saveBtnDis]} onPress={save} disabled={saving}>
-            <Text style={sv.saveBtnT}>{saving ? "Saving..." : "SAVE TODAY"}</Text>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60, paddingTop: 14 }} keyboardShouldPersistTaps="handled">
+
+          {/* ── POLLEN BAR ─────────────────────────────────────── */}
+          {pollenBar !== null && (
+            <View style={{ marginBottom: 18, backgroundColor: "#111", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#1E1E1E" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                <Text style={{ color: "#446688", fontSize: 11, fontWeight: "700", letterSpacing: 1 }}>TODAY'S EXPOSURE</Text>
+                <Text style={{ color: pollenBar.color, fontSize: 12, fontWeight: "700" }}>{pollenBar.label.toUpperCase()}</Text>
+              </View>
+              {/* Main bar */}
+              <View style={{ height: 14, backgroundColor: "#1A1A1A", borderRadius: 7, overflow: "hidden", marginBottom: 6 }}>
+                <View style={{ width: barPct + "%", height: "100%", backgroundColor: pollenBar.color, borderRadius: 7 }} />
+              </View>
+              {/* Sub-bars for tree/grass/weed */}
+              <View style={{ flexDirection: "row", gap: 4, marginBottom: 4 }}>
+                {[
+                  { label: "Tree", val: pollenBar.tree, max: 150, color: "#5D4037" },
+                  { label: "Grass", val: pollenBar.grass, max: 50, color: "#388E3C" },
+                  { label: "Weed", val: pollenBar.weed, max: 30, color: "#7B1FA2" },
+                ].map(({ label, val, max, color }) => (
+                  <View key={label} style={{ flex: 1 }}>
+                    <View style={{ height: 4, backgroundColor: "#1A1A1A", borderRadius: 2, overflow: "hidden" }}>
+                      {val !== null && <View style={{ width: Math.min(100, ((val ?? 0) / max) * 100) + "%", height: "100%", backgroundColor: color, borderRadius: 2 }} />}
+                    </View>
+                    <Text style={{ color: "#333", fontSize: 10, marginTop: 2 }}>{label} {val !== null ? Math.round(val ?? 0) : "—"}</Text>
+                  </View>
+                ))}
+              </View>
+              {pollenBar.wind !== null && <Text style={{ color: "#333", fontSize: 10 }}>Wind {Math.round(pollenBar.wind)} kph{(pollenBar.wind ?? 0) > 20 ? " · amplified" : ""}</Text>}
+              <Text style={{ color: "#333", fontSize: 9, marginTop: 4 }}>Calibrated to your 33 g/m³ tree threshold</Text>
+            </View>
+          )}
+
+          {/* ── EYES ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Eyes</Text>
+          <Sev val={eyesSev} set={setEyesSev} label="Severity (0 = none, 5 = severe)" />
+          <Toggle val={eyesItchy} set={setEyesItchy} label="Itchy" />
+          <Toggle val={eyesWatery} set={setEyesWatery} label="Watery" />
+          <Toggle val={eyesStrings} set={setEyesStrings} label="Strings / mucus" />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <Text style={{ color: "#446688", fontSize: 12 }}>Eye clears today</Text>
+            {[0,1,2,3,4,5].map(n => (
+              <Pressable key={n} onPress={() => setEyesTaps(n)}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: eyesTaps === n ? "#003A5C" : "#111", borderWidth: 1, borderColor: eyesTaps === n ? "#00E5FF" : "#2A2A2A" }}>
+                <Text style={{ color: eyesTaps === n ? "#00E5FF" : "#444", fontSize: 12 }}>{n}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* ── NOSE ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Nose</Text>
+          <Sev val={noseSev} set={setNoseSev} label="Severity" />
+          <Toggle val={noseRunny} set={setNoseRunny} label="Runny" />
+          <Toggle val={noseStuffy} set={setNoseStuffy} label="Stuffy" />
+          <Toggle val={noseSneezing} set={setNoseSneezing} label="Sneezing" />
+          {noseSneezing && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <Text style={{ color: "#446688", fontSize: 12 }}>Sneezing bouts</Text>
+              {[1,2,3,4,5,6].map(n => (
+                <Pressable key={n} onPress={() => setSneezingBouts(n)}
+                  style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: sneezingBouts === n ? "#003A5C" : "#111", borderWidth: 1, borderColor: sneezingBouts === n ? "#00E5FF" : "#2A2A2A" }}>
+                  <Text style={{ color: sneezingBouts === n ? "#00E5FF" : "#444", fontSize: 12 }}>{n}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {/* ── OTHER ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Other</Text>
+          <Toggle val={earItch} set={setEarItch} label="Inner ear itch" />
+          <Toggle val={earSound} set={setEarSound} label="Ear clicking / sound" />
+          <Toggle val={lungsT} set={setLungsT} label="Chest tight" />
+          <Toggle val={lungsC} set={setLungsC} label="Coughing" />
+          <Toggle val={headache} set={setHeadache} label="Headache / sinus pressure" />
+          <Toggle val={sleepAffected} set={setSleepAffected} label="Sleep affected last night" />
+
+          {/* ── OVERALL ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Overall</Text>
+          <Sev val={overall} set={setOverall} label="Overall severity" />
+
+          {/* ── CONTEXT ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Context</Text>
+          <Toggle val={wentOut} set={setWentOut} label="Went outside today" />
+          {wentOut && (
+            <>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <Text style={{ color: "#446688", fontSize: 12 }}>Minutes outside</Text>
+                <TextInput style={{ backgroundColor: "#111", color: "#ccc", fontSize: 13, padding: 8, borderRadius: 6, borderWidth: 1, borderColor: "#1E1E1E", width: 70 }}
+                  value={outdoorMins} onChangeText={setOutdoorMins} keyboardType="numeric"
+                  returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} placeholder="0" placeholderTextColor="#333" />
+              </View>
+              <Text style={{ color: "#446688", fontSize: 12, marginBottom: 6 }}>Activity level outside</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+                {(["sitting","walking","running"] as const).map(a => (
+                  <Pressable key={a} onPress={() => setActivityLevel(a)}
+                    style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, borderWidth: 1,
+                      borderColor: activityLevel === a ? "#00E5FF" : "#222",
+                      backgroundColor: activityLevel === a ? "#003A5C" : "transparent" }}>
+                    <Text style={{ color: activityLevel === a ? "#00E5FF" : "#555", fontSize: 12 }}>{a}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+          <Toggle val={windowsClosed} set={setWindowsClosed} label="Windows closed today" />
+          <Toggle val={filterRunning} set={setFilterRunning} label="Air filter running" />
+
+          {/* ── NOTES ──────────────────────────────────────────────── */}
+          <Text style={ps.section}>Notes</Text>
+          <TextInput style={{ backgroundColor: "#111", color: "#ccc", fontSize: 13, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: "#1E1E1E", minHeight: 70, marginBottom: 20 }}
+            value={notes} onChangeText={setNotes} multiline placeholder="Anything worth noting..." placeholderTextColor="#333"
+            blurOnSubmit returnKeyType="done" onSubmitEditing={() => Keyboard.dismiss()} />
+
+          <Pressable style={{ backgroundColor: "#003A5C", borderRadius: 11, paddingVertical: 15, alignItems: "center", borderWidth: 1, borderColor: "#00517A", opacity: saving ? 0.4 : 1 }}
+            onPress={save} disabled={saving}>
+            <Text style={{ color: "#00E5FF", fontSize: 14, fontWeight: "800", letterSpacing: 1 }}>{saving ? "Saving..." : "SAVE LOG"}</Text>
           </Pressable>
         </ScrollView>
       </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
 
+const ps = StyleSheet.create({
+  section: { color: "#446688", fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 16, marginBottom: 8 },
+  fieldLabel: { color: "#446688", fontSize: 12, marginBottom: 6 },
+});
 
-const TRIP_MODES = ["walk","run","bus","subway","bike","other"];
-const TRIP_LOG_FILE = FileSystem.documentDirectory + "towntrip_trip_log.jsonl";
 
 function TripLogModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [mode, setMode] = useState("walk");
