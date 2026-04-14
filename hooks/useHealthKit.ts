@@ -1,5 +1,6 @@
 // hooks/useHealthKit.ts
-// HealthKit live session stub — safe to import, returns nulls
+// HealthKit stub — safe to import in all builds, returns nulls
+// Native HealthKit integration deferred pending react-native-health setup
 
 import { useCallback, useState } from 'react';
 
