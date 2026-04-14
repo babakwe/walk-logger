@@ -59,14 +59,7 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "react-native-ble-plx",
-      [
-        "react-native-health",
-        {
-          "NSHealthShareUsageDescription": "TownTrip reads heart rate, weight, HRV, SpO2, steps, and workouts to sync with your personal health dashboard.",
-          "NSHealthUpdateUsageDescription": "TownTrip may write workout sessions to Apple Health."
-        }
-      ]
+      "react-native-ble-plx"
     ],
     "experiments": {
       "typedRoutes": true
