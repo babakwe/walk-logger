@@ -26,8 +26,8 @@ const POLLEN_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_POLLEN_KEY ?? "";
 
 function degToDir(deg: number) { return WIND_DIRS[Math.round(deg / 45) % 8]; }
 function pollenEmoji(upi: number | null): string { if (upi === null) return "🌿"; if (upi === 0) return "✅"; if (upi <= 1) return "🟢"; if (upi <= 2) return "🟡"; if (upi <= 3) return "🟠"; if (upi <= 4) return "🔴"; return "🟣"; }
-function tempEmoji(c: number | null): string { if (c === null) return "🌡️"; if (c <= 0) return "🥶"; if (c <= 10) return "🧥"; if (c <= 18) return "🌤️"; if (c <= 25) return "\u2600\uFE0F"; if (c <= 32) return "🥵"; return "🔥"; }
-function windEmoji(kph: number | null): string { if (kph === null) return "🌬️"; if (kph < 5) return "🍃"; if (kph < 20) return "💨"; if (kph < 40) return "🌬️"; return "🌪️"; }
+function tempEmoji(c: number | null): string { if (c === null) return "🌡"; if (c <= 0) return "🥶"; if (c <= 10) return "🧥"; if (c <= 18) return "🌤"; if (c <= 25) return "\u2600\uFE0F"; if (c <= 32) return "🥵"; return "🔥"; }
+function windEmoji(kph: number | null): string { if (kph === null) return "🌬"; if (kph < 5) return "🍃"; if (kph < 20) return "💨"; if (kph < 40) return "🌬"; return "🌪"; }
 function hrEmoji(bpm: number | null): string { if (bpm === null) return "💓"; if (bpm < 60) return "😴"; if (bpm < 90) return "🚶"; if (bpm < 120) return "🏃"; if (bpm < 150) return "\u26A1"; return "🔥"; }
 function spo2Emoji(pct: number | null): string { if (pct === null) return "🩸"; if (pct >= 97) return "✅"; if (pct >= 94) return "🟡"; return "🔴"; }
 
@@ -487,7 +487,7 @@ export default function WalkLoggerScreen() {
         <Text style={st.bleLabel}>{bleState.status === "connected" ? bleState.deviceName ?? "HRM" : bleState.status.toUpperCase()}</Text>
         {bleState.status === "disconnected" && <Pressable onPress={bleRescan} style={st.rescanBtn}><Text style={st.rescanT}>⟳</Text></Pressable>}
       </Pressable>
-      {showInner && (<View style={st.innerBar}><View style={st.innerRow}><View style={st.innerStat}><Text style={st.isv}>{hrEmoji(activeHR)} {activeHR ?? "--"}</Text><Text style={st.isl}>BPM</Text></View><View style={st.innerStat}><Text style={st.isv}>{spo2Emoji(hkData.spo2)} {hkData.spo2 ? `${hkData.spo2}%` : "--"}</Text><Text style={st.isl}>SpO2</Text></View><View style={st.innerStat}><Text style={st.isv}>💗 {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View><View style={st.innerStat}><Text style={st.isv}>🌡️ {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}°` : "--"}</Text><Text style={st.isl}>WRIST</Text></View></View></View>)}
+      {showInner && (<View style={st.innerBar}><View style={st.innerRow}><View style={st.innerStat}><Text style={st.isv}>{hrEmoji(activeHR)} {activeHR ?? "--"}</Text><Text style={st.isl}>BPM</Text></View><View style={st.innerStat}><Text style={st.isv}>{spo2Emoji(hkData.spo2)} {hkData.spo2 ? `${hkData.spo2}%` : "--"}</Text><Text style={st.isl}>SpO2</Text></View><View style={st.innerStat}><Text style={st.isv}>💗 {hkData.hrv ? `${Math.round(hkData.hrv)}ms` : "--"}</Text><Text style={st.isl}>HRV</Text></View><View style={st.innerStat}><Text style={st.isv}>🌡 {hkData.wrist_temp_c ? `${hkData.wrist_temp_c.toFixed(1)}°` : "--"}</Text><Text style={st.isl}>WRIST</Text></View></View></View>)}
       <View style={st.statsBar}>
         <View style={st.stat}><Text style={st.sv}>{fmt(elapsed)}</Text><Text style={st.sl}>TIME</Text></View>
         <View style={st.stat}><Text style={st.sv}>{speedKmh}</Text><Text style={st.sl}>KM/H</Text></View>
